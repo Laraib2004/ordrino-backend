@@ -54,6 +54,27 @@ app.post('/create_payment_intent', async (req, res) => {
 	}
 });
 
+app.post('/create_payment_intent_cash', async (req, res) => {
+	const { amount, currency = 'eur' } = req.body; // Amount should be in cents
+	console.log(`Received request to create PaymentIntent for amount: ${amount}, currency: ${currency}`);
+
+	if (!amount || typeof amount !== 'number' || amount <= 0) {
+		return res.status(400).json({ error: 'Amount is required and must be a positive number.' });
+	}
+
+	try {
+		const paymentIntent = await stripe.paymentIntents.create({
+			amount: amount, // Amount in cents
+			currency: currency,
+		});
+		res.json({ client_secret: paymentIntent.client_secret });
+		console.log('PaymentIntent created and client_secret sent.');
+	} catch (error) {
+		console.error('Error creating PaymentIntent:', error);
+		res.status(500).json({ error: error.message });
+	}
+});
+
 // --- Example endpoint for capturing a Payment Intent (as discussed previously) ---
 app.post('/capture_payment_intent', async (req, res) => {
 	const { payment_intent_id } = req.body;
