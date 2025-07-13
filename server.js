@@ -22,7 +22,7 @@ app.post('/connection_token', async (req, res) => {
 
 		// Return the secret to the client
 		res.json({ secret: connectionToken.secret });
-		console.log('ConnectionToken created and secret sent.\n' + connectionToken.secret);
+		console.log('ConnectionToken created and secret sent.');
 	} catch (error) {
 		console.error('Error creating ConnectionToken:', error);
 		res.status(500).json({ error: error.message });
