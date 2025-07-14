@@ -111,6 +111,7 @@ app.post('/cash_payment', async (req, res) => {
 			customer: customer.id,
 			collection_method: 'send_invoice',
 			days_until_due: 0,
+			auto_advance: true,
 			metadata: {
 				payment_type: 'cash',
 				...metadata,
