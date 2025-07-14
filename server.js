@@ -139,6 +139,8 @@ app.post('/cash_payment', async (req, res) => {
 });
 app.post('/cash_payment', async (req, res) => {
 	const { amount, currency = 'eur', description = 'Cash payment', metadata = {} } = req.body;
+	console.error('AAAAA:', req.body);
+
 
 	if (!amount || typeof amount !== 'number' || amount <= 0) {
 		return res.status(400).json({ error: 'Amount must be a positive number.' });
@@ -158,13 +160,12 @@ app.post('/cash_payment', async (req, res) => {
 				metadata: { type: 'anonymous' },
 			});
 		}
-		console.log("CENTS: " + amount);
 		// Create invoice item
 		await stripe.invoiceItems.create({
 			customer: customer.id,
-			amount,
-			currency,
-			description,
+			amount: amount,
+			currency: currency,
+			description: description,
 		});
 
 		// Create and finalize invoice
