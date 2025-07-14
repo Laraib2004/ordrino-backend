@@ -54,27 +54,6 @@ app.post('/create_payment_intent', async (req, res) => {
 	}
 });
 
-app.post('/create_payment_intent_cash', async (req, res) => {
-	const { amount, currency = 'eur' } = req.body; // Amount should be in cents
-	console.log(`Received request to create PaymentIntent for amount: ${amount}, currency: ${currency}`);
-
-	if (!amount || typeof amount !== 'number' || amount <= 0) {
-		return res.status(400).json({ error: 'Amount is required and must be a positive number.' });
-	}
-
-	try {
-		const paymentIntent = await stripe.paymentIntents.create({
-			amount: amount, // Amount in cents
-			currency: currency,
-		});
-		res.json({ client_secret: paymentIntent.client_secret });
-		console.log('PaymentIntent created and client_secret sent.');
-	} catch (error) {
-		console.error('Error creating PaymentIntent:', error);
-		res.status(500).json({ error: error.message });
-	}
-});
-
 // --- Example endpoint for capturing a Payment Intent (as discussed previously) ---
 app.post('/capture_payment_intent', async (req, res) => {
 	const { payment_intent_id } = req.body;
@@ -95,47 +74,69 @@ app.post('/capture_payment_intent', async (req, res) => {
 	}
 });
 
-// --- Example endpoint for finalizing an order (as discussed previously) ---
-// This would interact with your Firestore database
-// Make sure you have Firebase Admin SDK initialized if using this
-// const admin = require('firebase-admin');
-// const serviceAccount = require('./path/to/your/serviceAccountKey.json'); // Adjust path
-// admin.initializeApp({
-//   credential: admin.credential.cert(serviceAccount),
-//   databaseURL: 'https://your-project-id.firebaseio.com'
-// });
-// const db = admin.firestore();
+app.post('/cash_payment', async (req, res) => {
+	const { amount, currency = 'eur', description = 'Cash payment', metadata = {} } = req.body;
 
-app.post('/finalize_order', async (req, res) => {
-	const { restaurantId, tableId } = req.body;
-	console.log(`Received request to finalize order for restaurant: ${restaurantId}, table: ${tableId}`);
-
-	if (!restaurantId || !tableId) {
-		return res.status(400).json({ error: 'Missing restaurantId or tableId' });
+	if (!amount || typeof amount !== 'number' || amount <= 0) {
+		return res.status(400).json({ error: 'Amount must be a positive number.' });
 	}
 
 	try {
-		// Placeholder for your Firestore logic
-		// In a real app, you'd use Firebase Admin SDK here to:
-		// 1. Get the table's current order subcollection
-		// 2. Delete all documents in that subcollection
-		// 3. Update the table document's status to 'Available' and totalPrice to 0.0
-		console.log(`Simulating order finalization for Table ${tableId} in Restaurant ${restaurantId}`);
-		// Example:
-		// const tableRef = db.collection('restaurants').doc(restaurantId).collection('tables').doc(tableId);
-		// const currentOrderRef = tableRef.collection('currentOrder');
-		// const batch = db.batch();
-		// const orderItemsSnapshot = await currentOrderRef.get();
-		// orderItemsSnapshot.docs.forEach(doc => { batch.delete(doc.ref); });
-		// batch.update(tableRef, { status: 'Available', totalPrice: 0.0 });
-		// await batch.commit();
+		// 1. Reuse or create an "anonymous" customer
+		const anonymousCustomerEmail = 'anonymous@yourdomain.com';
+		// Try to find existing customer
+		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
+		let customer = customers.data[0];
 
-		res.json({ success: true, message: 'Order finalized and table reset (simulated).' });
+		// Create if not found
+		if (!customer) {
+			customer = await stripe.customers.create({
+				name: 'Walk-in Customer',
+				email: anonymousCustomerEmail,
+				metadata: { type: 'anonymous' },
+			});
+		}
+
+		// 2. Create the invoice item
+		await stripe.invoiceItems.create({
+			customer: customer.id,
+			amount,
+			currency,
+			description,
+		});
+
+		// 3. Create and finalize the invoice
+		const invoice = await stripe.invoices.create({
+			customer: customer.id,
+			collection_method: 'send_invoice',
+			days_until_due: 0,
+			metadata: {
+				payment_type: 'cash',
+				...metadata, // optional fields like location, order_id, etc.
+			},
+		});
+
+		await stripe.invoices.finalizeInvoice(invoice.id);
+
+		// 4. Mark as paid manually
+		await stripe.invoices.pay(invoice.id, {
+			paid_out_of_band: true,
+		});
+
+		// 5. Return the invoice URL and PDF
+		const paidInvoice = await stripe.invoices.retrieve(invoice.id);
+
+		res.json({
+			invoice_id: paidInvoice.id,
+			hosted_invoice_url: paidInvoice.hosted_invoice_url,
+			invoice_pdf: paidInvoice.invoice_pdf,
+		});
 	} catch (error) {
-		console.error('Error finalizing order:', error);
-		res.status(500).json({ error: 'Failed to finalize order: ' + error.message });
+		console.error('Error creating cash payment invoice:', error);
+		res.status(500).json({ error: error.message });
 	}
 });
+
 
 
 // Start the server
