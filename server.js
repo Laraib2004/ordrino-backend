@@ -64,20 +64,68 @@ app.post('/capture_payment_intent', async (req, res) => {
 	}
 
 	try {
+		// Step 1: Capture the PaymentIntent
 		const paymentIntent = await stripe.paymentIntents.capture(payment_intent_id);
-		// You would typically update your order/database here after successful capture
 		console.log(`PaymentIntent ${paymentIntent.id} captured. Status: ${paymentIntent.status}`);
-		res.json({ status: paymentIntent.status });
+
+		// Step 2: Get amount and customer info
+		const { amount, currency, customer, description } = paymentIntent;
+
+		let invoiceCustomer = customer;
+		if (!invoiceCustomer) {
+			// If customer is not set on PaymentIntent, create a default one
+			const tempCustomer = await stripe.customers.create({
+				email: 'anonymous@yourdomain.com',
+				name: 'Card',
+			});
+			invoiceCustomer = tempCustomer.id;
+		}
+
+		// Step 3: Create invoice item
+		await stripe.invoiceItems.create({
+			customer: invoiceCustomer,
+			amount: amount, // Already in cents
+			currency: currency || 'eur',
+			description: description || 'Captured card payment',
+		});
+
+		// Step 4: Create invoice (include invoice items)
+		let invoice = await stripe.invoices.create({
+			customer: invoiceCustomer,
+			collection_method: 'send_invoice',
+			days_until_due: 0,
+			pending_invoice_items_behavior: 'include', // Include previously created invoice items
+			metadata: {
+				source: 'card',
+				linked_payment_intent: paymentIntent.id,
+			},
+		});
+
+		// Step 5: Finalize and mark as paid (optional, since card payment already completed)
+		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
+		if (invoice.status !== 'paid') {
+			await stripe.invoices.pay(invoice.id, {
+				paid_out_of_band: true, // Tells Stripe this is already paid externally
+			});
+		}
+
+		// Step 6: Return invoice info
+		const paidInvoice = await stripe.invoices.retrieve(invoice.id);
+		res.json({
+			status: paymentIntent.status,
+			invoice_id: paidInvoice.id,
+			hosted_invoice_url: paidInvoice.hosted_invoice_url,
+			invoice_pdf: paidInvoice.invoice_pdf,
+		});
 	} catch (error) {
-		console.error('Error capturing PaymentIntent:', error);
+		console.error('Error capturing PaymentIntent and creating invoice:', error);
 		res.status(500).json({ error: error.message });
 	}
 });
 
+
 app.post('/cash_payment', async (req, res) => {
 	const { amount, currency = 'eur', description = 'Cash payment', metadata = {} } = req.body;
-	console.log('AAAAA:', req.body);
-	console.log('BBBBBB:', amount);
 
 
 	if (!amount || typeof amount !== 'number' || amount <= 0) {
@@ -93,7 +141,7 @@ app.post('/cash_payment', async (req, res) => {
 
 		if (!customer) {
 			customer = await stripe.customers.create({
-				name: 'Walk-in Customer',
+				name: 'Cash',
 				email: anonymousCustomerEmail,
 				metadata: { type: 'anonymous' },
 			});
@@ -118,7 +166,7 @@ app.post('/cash_payment', async (req, res) => {
 			},
 		});
 
-		
+
 		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
 
 		// 🔒 Only mark as paid if not already paid
