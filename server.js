@@ -118,6 +118,7 @@ app.post('/cash_payment', async (req, res) => {
 			},
 		});
 
+		
 		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
 
 		// 🔒 Only mark as paid if not already paid
