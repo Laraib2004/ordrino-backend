@@ -103,7 +103,7 @@ app.post('/cash_payment', async (req, res) => {
 		let invoice = await stripe.invoices.create({
 			customer: customer.id,
 			collection_method: 'send_invoice',
-			amount: amount,
+			amount_paid: amount,
 			currency: currency,
 			description: description,
 			days_until_due: 0,
