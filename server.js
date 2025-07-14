@@ -77,6 +77,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 app.post('/cash_payment', async (req, res) => {
 	const { amount, currency = 'eur', description = 'Cash payment', metadata = {} } = req.body;
 	console.log('AAAAA:', req.body);
+	console.log('BBBBBB:', amount);
 
 
 	if (!amount || typeof amount !== 'number' || amount <= 0) {
