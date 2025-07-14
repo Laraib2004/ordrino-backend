@@ -158,7 +158,7 @@ app.post('/cash_payment', async (req, res) => {
 				metadata: { type: 'anonymous' },
 			});
 		}
-
+		console.log(amount);
 		// Create invoice item
 		await stripe.invoiceItems.create({
 			customer: customer.id,
