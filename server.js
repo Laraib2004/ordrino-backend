@@ -98,16 +98,20 @@ app.post('/cash_payment', async (req, res) => {
 				metadata: { type: 'anonymous' },
 			});
 		}
+		// Create invoice item
+		await stripe.invoiceItems.create({
+			customer: customer.id,
+			amount: amount,
+			currency: currency,
+			description: description,
+		});
 
 		// Create and finalize invoice
 		let invoice = await stripe.invoices.create({
 			customer: customer.id,
 			collection_method: 'send_invoice',
-			amount_paid: amount,
-			currency: currency,
-			description: description,
 			days_until_due: 0,
-			auto_advance: true,
+			pending_invoice_items_behavior: 'include',
 			metadata: {
 				payment_type: 'cash',
 				...metadata,
