@@ -82,13 +82,12 @@ app.post('/cash_payment', async (req, res) => {
 	}
 
 	try {
-		// 1. Reuse or create an "anonymous" customer
 		const anonymousCustomerEmail = 'anonymous@yourdomain.com';
-		// Try to find existing customer
+
+		// Reuse or create anonymous customer
 		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
 		let customer = customers.data[0];
 
-		// Create if not found
 		if (!customer) {
 			customer = await stripe.customers.create({
 				name: 'Walk-in Customer',
@@ -97,7 +96,7 @@ app.post('/cash_payment', async (req, res) => {
 			});
 		}
 
-		// 2. Create the invoice item
+		// Create invoice item
 		await stripe.invoiceItems.create({
 			customer: customer.id,
 			amount,
@@ -105,25 +104,27 @@ app.post('/cash_payment', async (req, res) => {
 			description,
 		});
 
-		// 3. Create and finalize the invoice
-		const invoice = await stripe.invoices.create({
+		// Create and finalize invoice
+		let invoice = await stripe.invoices.create({
 			customer: customer.id,
 			collection_method: 'send_invoice',
 			days_until_due: 0,
 			metadata: {
 				payment_type: 'cash',
-				...metadata, // optional fields like location, order_id, etc.
+				...metadata,
 			},
 		});
 
-		await stripe.invoices.finalizeInvoice(invoice.id);
+		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
 
-		// 4. Mark as paid manually
-		await stripe.invoices.pay(invoice.id, {
-			paid_out_of_band: true,
-		});
+		// 🔒 Only mark as paid if not already paid
+		if (invoice.status !== 'paid') {
+			await stripe.invoices.pay(invoice.id, {
+				paid_out_of_band: true,
+			});
+		}
 
-		// 5. Return the invoice URL and PDF
+		// Retrieve updated invoice
 		const paidInvoice = await stripe.invoices.retrieve(invoice.id);
 
 		res.json({
@@ -136,6 +137,70 @@ app.post('/cash_payment', async (req, res) => {
 		res.status(500).json({ error: error.message });
 	}
 });
+app.post('/cash_payment', async (req, res) => {
+	const { amount, currency = 'eur', description = 'Cash payment', metadata = {} } = req.body;
+
+	if (!amount || typeof amount !== 'number' || amount <= 0) {
+		return res.status(400).json({ error: 'Amount must be a positive number.' });
+	}
+
+	try {
+		const anonymousCustomerEmail = 'anonymous@yourdomain.com';
+
+		// Reuse or create anonymous customer
+		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
+		let customer = customers.data[0];
+
+		if (!customer) {
+			customer = await stripe.customers.create({
+				name: 'Walk-in Customer',
+				email: anonymousCustomerEmail,
+				metadata: { type: 'anonymous' },
+			});
+		}
+
+		// Create invoice item
+		await stripe.invoiceItems.create({
+			customer: customer.id,
+			amount,
+			currency,
+			description,
+		});
+
+		// Create and finalize invoice
+		let invoice = await stripe.invoices.create({
+			customer: customer.id,
+			collection_method: 'send_invoice',
+			days_until_due: 0,
+			metadata: {
+				payment_type: 'cash',
+				...metadata,
+			},
+		});
+
+		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
+
+		// 🔒 Only mark as paid if not already paid
+		if (invoice.status !== 'paid') {
+			await stripe.invoices.pay(invoice.id, {
+				paid_out_of_band: true,
+			});
+		}
+
+		// Retrieve updated invoice
+		const paidInvoice = await stripe.invoices.retrieve(invoice.id);
+
+		res.json({
+			invoice_id: paidInvoice.id,
+			hosted_invoice_url: paidInvoice.hosted_invoice_url,
+			invoice_pdf: paidInvoice.invoice_pdf,
+		});
+	} catch (error) {
+		console.error('Error creating cash payment invoice:', error);
+		res.status(500).json({ error: error.message });
+	}
+});
+
 
 
 
