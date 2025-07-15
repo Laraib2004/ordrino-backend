@@ -145,16 +145,78 @@ app.post('/cash_payment', async (req, res) => {
 			});
 		}
 
-		// Create invoice items for each ordered item
+		// First, create or retrieve the Italian VAT tax rates in Stripe
+		// Note: You should create these once and reuse the IDs, not create them every time
+		let standardVatRate, reducedVatRate, superReducedVatRate;
+
+		// Try to find existing tax rates
+		const existingTaxRates = await stripe.taxRates.list({ limit: 100 });
+
+		// Standard rate (10%) - restaurant services
+		standardVatRate = existingTaxRates.data.find(rate => rate.percentage === 10 && rate.inclusive === false);
+		if (!standardVatRate) {
+			standardVatRate = await stripe.taxRates.create({
+				display_name: 'IVA 10%',
+				description: 'Italian VAT standard rate for restaurant services',
+				percentage: 10,
+				inclusive: false,
+				country: 'IT',
+				jurisdiction: 'Italy',
+			});
+		}
+
+		// Reduced rate (5%) - some takeaway items
+		reducedVatRate = existingTaxRates.data.find(rate => rate.percentage === 5 && rate.inclusive === false);
+		if (!reducedVatRate) {
+			reducedVatRate = await stripe.taxRates.create({
+				display_name: 'IVA 5%',
+				description: 'Italian VAT reduced rate for certain food items',
+				percentage: 5,
+				inclusive: false,
+				country: 'IT',
+				jurisdiction: 'Italy',
+			});
+		}
+
+		// Super-reduced rate (4%) - basic food items
+		superReducedVatRate = existingTaxRates.data.find(rate => rate.percentage === 4 && rate.inclusive === false);
+		if (!superReducedVatRate) {
+			superReducedVatRate = await stripe.taxRates.create({
+				display_name: 'IVA 4%',
+				description: 'Italian VAT super-reduced rate for essential food',
+				percentage: 4,
+				inclusive: false,
+				country: 'IT',
+				jurisdiction: 'Italy',
+			});
+		}
+
+		// Create invoice items for each ordered item with appropriate tax rates
 		for (const item of items) {
-			const { name, quantity, unit_price } = item;
+			const { name, quantity, unit_price, item_type = 'standard' } = item;
 			if (!name || !quantity || !unit_price) continue;
+
+			// Determine which tax rate applies based on item type
+			let taxRate;
+			switch (item_type) {
+				case 'reduced':
+					taxRate = [reducedVatRate.id];
+					break;
+				case 'super_reduced':
+					taxRate = [superReducedVatRate.id];
+					break;
+				case 'standard':
+				default:
+					taxRate = [standardVatRate.id];
+			}
 
 			await stripe.invoiceItems.create({
 				customer: customer.id,
 				amount: quantity * unit_price, // total per item
 				currency,
-				description: `${quantity}x ${name}`,
+				description: name,
+				quantity: quantity,
+				tax_rates: taxRate
 			});
 		}
 
