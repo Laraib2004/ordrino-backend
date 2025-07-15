@@ -164,7 +164,7 @@ app.post('/cash_payment', async (req, res) => {
 				jurisdiction: 'Italy',
 			});
 		}
-		
+
 
 		// Reduced rate (5%) - some takeaway items
 		reducedVatRate = existingTaxRates.data.find(rate => rate.percentage === 5 && rate.inclusive === false);
@@ -213,7 +213,7 @@ app.post('/cash_payment', async (req, res) => {
 
 			await stripe.invoiceItems.create({
 				customer: customer.id,
-				amount: quantity * unit_price, // total per item
+				unit_amount_decimal: unit_price.toString(),
 				currency,
 				description: name,
 				quantity: quantity,
