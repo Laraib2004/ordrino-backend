@@ -164,6 +164,7 @@ app.post('/cash_payment', async (req, res) => {
 				jurisdiction: 'Italy',
 			});
 		}
+		
 
 		// Reduced rate (5%) - some takeaway items
 		reducedVatRate = existingTaxRates.data.find(rate => rate.percentage === 5 && rate.inclusive === false);
