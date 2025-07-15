@@ -145,59 +145,52 @@ app.post('/cash_payment', async (req, res) => {
 			});
 		}
 
-		// First, create or retrieve the Italian VAT tax rates in Stripe
-		// Note: You should create these once and reuse the IDs, not create them every time
+		// Create or retrieve INCLUSIVE tax rates (should be done once, not every request)
 		let standardVatRate, reducedVatRate, superReducedVatRate;
 
-		// Try to find existing tax rates
 		const existingTaxRates = await stripe.taxRates.list({ limit: 100 });
 
-		// Standard rate (10%) - restaurant services
-		standardVatRate = existingTaxRates.data.find(rate => rate.percentage === 10 && rate.inclusive === false);
+		standardVatRate = existingTaxRates.data.find(rate => rate.percentage === 10 && rate.inclusive === true);
 		if (!standardVatRate) {
 			standardVatRate = await stripe.taxRates.create({
 				display_name: 'IVA 10%',
-				description: 'Italian VAT standard rate for restaurant services',
+				description: 'Italian VAT standard rate (inclusive)',
 				percentage: 10,
-				inclusive: false,
+				inclusive: true,  // This makes the tax INCLUDED in the price
 				country: 'IT',
 				jurisdiction: 'Italy',
 			});
 		}
 
-
-		// Reduced rate (5%) - some takeaway items
-		reducedVatRate = existingTaxRates.data.find(rate => rate.percentage === 5 && rate.inclusive === false);
+		reducedVatRate = existingTaxRates.data.find(rate => rate.percentage === 5 && rate.inclusive === true);
 		if (!reducedVatRate) {
 			reducedVatRate = await stripe.taxRates.create({
 				display_name: 'IVA 5%',
-				description: 'Italian VAT reduced rate for certain food items',
+				description: 'Italian VAT reduced rate (inclusive)',
 				percentage: 5,
-				inclusive: false,
+				inclusive: true,
 				country: 'IT',
 				jurisdiction: 'Italy',
 			});
 		}
 
-		// Super-reduced rate (4%) - basic food items
-		superReducedVatRate = existingTaxRates.data.find(rate => rate.percentage === 4 && rate.inclusive === false);
+		superReducedVatRate = existingTaxRates.data.find(rate => rate.percentage === 4 && rate.inclusive === true);
 		if (!superReducedVatRate) {
 			superReducedVatRate = await stripe.taxRates.create({
 				display_name: 'IVA 4%',
-				description: 'Italian VAT super-reduced rate for essential food',
+				description: 'Italian VAT super-reduced rate (inclusive)',
 				percentage: 4,
-				inclusive: false,
+				inclusive: true,
 				country: 'IT',
 				jurisdiction: 'Italy',
 			});
 		}
 
-		// Create invoice items for each ordered item with appropriate tax rates
+		// Create invoice items
 		for (const item of items) {
 			const { name, quantity, unit_price, item_type = 'standard' } = item;
 			if (!name || !quantity || !unit_price) continue;
 
-			// Determine which tax rate applies based on item type
 			let taxRate;
 			switch (item_type) {
 				case 'reduced':
@@ -213,9 +206,9 @@ app.post('/cash_payment', async (req, res) => {
 
 			await stripe.invoiceItems.create({
 				customer: customer.id,
-				unit_amount_decimal: unit_price.toString(),
+				unit_amount: unit_price,
 				currency,
-				description: name,
+				description: `${name} (${quantity} × ${(unit_price / quantity).toFixed(2)}€)`,
 				quantity: quantity,
 				tax_rates: taxRate
 			});
@@ -246,16 +239,13 @@ app.post('/cash_payment', async (req, res) => {
 			invoice_id: paidInvoice.id,
 			hosted_invoice_url: paidInvoice.hosted_invoice_url,
 			invoice_pdf: paidInvoice.invoice_pdf,
+			total: (paidInvoice.total / 100).toFixed(2), // Convert back to euros
 		});
 	} catch (error) {
 		console.error('Error creating cash payment invoice:', error);
 		res.status(500).json({ error: error.message });
 	}
 });
-
-
-
-
 
 // Start the server
 app.listen(PORT, () => {
