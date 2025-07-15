@@ -125,7 +125,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 
 app.post('/cash_payment', async (req, res) => {
-	const { items = [], currency = 'eur', description = 'Cash payment', metadata = {} } = req.body;
+	const { items = [], currency = 'eur', metadata = {} } = req.body;
 
 	if (!Array.isArray(items) || items.length === 0) {
 		return res.status(400).json({ error: 'At least one item is required.' });
@@ -134,91 +134,78 @@ app.post('/cash_payment', async (req, res) => {
 	try {
 		const anonymousCustomerEmail = 'anonymous@yourdomain.com';
 
+		// Get or create customer
 		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
-		let customer = customers.data[0];
+		let customer = customers.data[0] || await stripe.customers.create({
+			name: 'Cash',
+			email: anonymousCustomerEmail,
+			metadata: { type: 'anonymous' },
+		});
 
-		if (!customer) {
-			customer = await stripe.customers.create({
-				name: 'Cash',
-				email: anonymousCustomerEmail,
-				metadata: { type: 'anonymous' },
-			});
-		}
-
-		// Create or retrieve INCLUSIVE tax rates (should be done once, not every request)
-		let standardVatRate, reducedVatRate, superReducedVatRate;
-
+		// Get or create EXCLUSIVE tax rates (we'll handle inclusion manually)
 		const existingTaxRates = await stripe.taxRates.list({ limit: 100 });
 
-		standardVatRate = existingTaxRates.data.find(rate => rate.percentage === 10 && rate.inclusive === true);
-		if (!standardVatRate) {
-			standardVatRate = await stripe.taxRates.create({
-				display_name: 'IVA 10%',
-				description: 'Italian VAT standard rate (inclusive)',
-				percentage: 10,
-				inclusive: true,  // This makes the tax INCLUDED in the price
-				country: 'IT',
-				jurisdiction: 'Italy',
-			});
-		}
+		const getOrCreateTaxRate = async (rate, percentage) => {
+			return existingTaxRates.data.find(r => r.percentage === percentage && !r.inclusive) ||
+				await stripe.taxRates.create({
+					display_name: `IVA ${percentage}%`,
+					description: `Italian VAT ${percentage}% rate (exclusive)`,
+					percentage,
+					inclusive: false,
+					country: 'IT',
+					jurisdiction: 'Italy',
+				});
+		};
 
-		reducedVatRate = existingTaxRates.data.find(rate => rate.percentage === 5 && rate.inclusive === true);
-		if (!reducedVatRate) {
-			reducedVatRate = await stripe.taxRates.create({
-				display_name: 'IVA 5%',
-				description: 'Italian VAT reduced rate (inclusive)',
-				percentage: 5,
-				inclusive: true,
-				country: 'IT',
-				jurisdiction: 'Italy',
-			});
-		}
+		const standardVatRate = await getOrCreateTaxRate('standard', 10);
+		const reducedVatRate = await getOrCreateTaxRate('reduced', 5);
+		const superReducedVatRate = await getOrCreateTaxRate('super_reduced', 4);
 
-		superReducedVatRate = existingTaxRates.data.find(rate => rate.percentage === 4 && rate.inclusive === true);
-		if (!superReducedVatRate) {
-			superReducedVatRate = await stripe.taxRates.create({
-				display_name: 'IVA 4%',
-				description: 'Italian VAT super-reduced rate (inclusive)',
-				percentage: 4,
-				inclusive: true,
-				country: 'IT',
-				jurisdiction: 'Italy',
-			});
-		}
+		// Calculate net amount from gross (tax-inclusive) amount
+		const calculateNetAmount = (grossAmountCents, taxPercentage) => {
+			return Math.round(grossAmountCents / (1 + (taxPercentage / 100)));
+		};
 
 		// Create invoice items
 		for (const item of items) {
 			const { name, quantity, unit_price, item_type = 'standard' } = item;
 			if (!name || !quantity || !unit_price) continue;
 
-			let taxRate;
+			let taxRate, taxPercentage;
 			switch (item_type) {
 				case 'reduced':
 					taxRate = [reducedVatRate.id];
+					taxPercentage = 5;
 					break;
 				case 'super_reduced':
 					taxRate = [superReducedVatRate.id];
+					taxPercentage = 4;
 					break;
 				case 'standard':
 				default:
 					taxRate = [standardVatRate.id];
+					taxPercentage = 10;
 			}
+
+			const netAmount = calculateNetAmount(unit_price, taxPercentage);
 
 			await stripe.invoiceItems.create({
 				customer: customer.id,
-				unit_amount_decimal: unit_price,
+				unit_amount_decimal: netAmount,
 				currency,
-				description: `${name} (${quantity} × ${(unit_price / quantity).toFixed(2)}€)`,
-				quantity: quantity,
+				description: `${name} (IVA inclusa)`,
+				quantity,
 				tax_rates: taxRate
 			});
 		}
 
+		// Create invoice with Italian compliance notes
 		let invoice = await stripe.invoices.create({
 			customer: customer.id,
 			collection_method: 'send_invoice',
 			days_until_due: 0,
 			pending_invoice_items_behavior: 'include',
+			footer: 'Importi IVA inclusa ai sensi dell\'Art. 13 DPR 633/72',
 			metadata: {
 				payment_type: 'cash',
 				...metadata,
@@ -228,9 +215,7 @@ app.post('/cash_payment', async (req, res) => {
 		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
 
 		if (invoice.status !== 'paid') {
-			await stripe.invoices.pay(invoice.id, {
-				paid_out_of_band: true,
-			});
+			await stripe.invoices.pay(invoice.id, { paid_out_of_band: true });
 		}
 
 		const paidInvoice = await stripe.invoices.retrieve(invoice.id);
@@ -239,11 +224,16 @@ app.post('/cash_payment', async (req, res) => {
 			invoice_id: paidInvoice.id,
 			hosted_invoice_url: paidInvoice.hosted_invoice_url,
 			invoice_pdf: paidInvoice.invoice_pdf,
-			total: (paidInvoice.total / 100).toFixed(2), // Convert back to euros
+			total: (paidInvoice.total / 100).toFixed(2),
+			tax_inclusive: true // Indicate to frontend that prices include tax
 		});
+
 	} catch (error) {
 		console.error('Error creating cash payment invoice:', error);
-		res.status(500).json({ error: error.message });
+		res.status(500).json({
+			error: error.message,
+			code: error.code || 'payment_error'
+		});
 	}
 });
 
