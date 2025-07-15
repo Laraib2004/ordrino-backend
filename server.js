@@ -125,36 +125,39 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 
 app.post('/cash_payment', async (req, res) => {
-	const { amount, currency = 'eur', description = 'Cash payment', metadata = {} } = req.body;
+	const { items = [], currency = 'eur', description = 'Cash payment', metadata = {} } = req.body;
 
-
-	if (!amount || typeof amount !== 'number' || amount <= 0) {
-		return res.status(400).json({ error: 'Amount must be a positive number.' });
+	if (!Array.isArray(items) || items.length === 0) {
+		return res.status(400).json({ error: 'At least one item is required.' });
 	}
 
 	try {
 		const anonymousCustomerEmail = 'anonymous@yourdomain.com';
 
-		// Reuse or create anonymous customer
 		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
 		let customer = customers.data[0];
 
 		if (!customer) {
 			customer = await stripe.customers.create({
-				name: 'Cash',
+				name: 'Walk-in Customer',
 				email: anonymousCustomerEmail,
 				metadata: { type: 'anonymous' },
 			});
 		}
-		// Create invoice item
-		await stripe.invoiceItems.create({
-			customer: customer.id,
-			amount: amount,
-			currency: currency,
-			description: description,
-		});
 
-		// Create and finalize invoice
+		// Create invoice items for each ordered item
+		for (const item of items) {
+			const { name, quantity, unit_price } = item;
+			if (!name || !quantity || !unit_price) continue;
+
+			await stripe.invoiceItems.create({
+				customer: customer.id,
+				amount: quantity * unit_price, // total per item
+				currency,
+				description: `${quantity}x ${name}`,
+			});
+		}
+
 		let invoice = await stripe.invoices.create({
 			customer: customer.id,
 			collection_method: 'send_invoice',
@@ -166,17 +169,14 @@ app.post('/cash_payment', async (req, res) => {
 			},
 		});
 
-
 		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
 
-		// 🔒 Only mark as paid if not already paid
 		if (invoice.status !== 'paid') {
 			await stripe.invoices.pay(invoice.id, {
 				paid_out_of_band: true,
 			});
 		}
 
-		// Retrieve updated invoice
 		const paidInvoice = await stripe.invoices.retrieve(invoice.id);
 
 		res.json({
@@ -189,6 +189,7 @@ app.post('/cash_payment', async (req, res) => {
 		res.status(500).json({ error: error.message });
 	}
 });
+
 
 
 
