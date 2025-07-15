@@ -206,7 +206,7 @@ app.post('/cash_payment', async (req, res) => {
 
 			await stripe.invoiceItems.create({
 				customer: customer.id,
-				unit_amount: unit_price,
+				unit_amount_decimal: unit_price,
 				currency,
 				description: `${name} (${quantity} × ${(unit_price / quantity).toFixed(2)}€)`,
 				quantity: quantity,
