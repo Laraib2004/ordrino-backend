@@ -139,7 +139,7 @@ app.post('/cash_payment', async (req, res) => {
 
 		if (!customer) {
 			customer = await stripe.customers.create({
-				name: 'Walk-in Customer',
+				name: 'Cash',
 				email: anonymousCustomerEmail,
 				metadata: { type: 'anonymous' },
 			});
