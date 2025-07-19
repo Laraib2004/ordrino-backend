@@ -136,7 +136,7 @@ app.post('/cash_payment', async (req, res) => {
 
 		// Get or create "anonymous" customer
 		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
-		let customer = customers.data[1];
+		let customer = customers.data[0];
 
 		if (!customer) {
 			customer = await stripe.customers.create({
@@ -144,6 +144,7 @@ app.post('/cash_payment', async (req, res) => {
 				email: anonymousCustomerEmail,
 				address: {
 					country: 'IT',
+					postal_code: "39100"
 				},
 				metadata: {
 					type: 'anonymous',
