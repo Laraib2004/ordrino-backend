@@ -198,7 +198,7 @@ app.post('/cash_payment', async (req, res) => {
 
 		// Return YOUR calculations (not Stripe's)
 		res.json({
-			hosted_invoice_url: paidInvoice.hosted_invoice_url,
+			hosted_invoice_url: invoice.hosted_invoice_url,
 			invoice_id: invoice.id,
 			total: (calculations.grossTotal / 100).toFixed(2), // €12.00
 			total_excluding_tax: (calculations.netTotal / 100).toFixed(2), // €10.80
