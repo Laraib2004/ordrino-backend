@@ -153,6 +153,7 @@ app.post('/cash_payment', async (req, res) => {
 				},
 			});
 		}
+		
 
 		// Calculate tax amounts manually first
 		const taxDetails = items.reduce((acc, item) => {
