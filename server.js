@@ -201,6 +201,7 @@ app.post('/cash_payment', async (req, res) => {
 		// Prepare the response with correct tax breakdown
 		res.json({
 			invoice_id: invoice.id,
+			hosted_invoice_url: invoice.hosted_invoice_url,
 			total: (calculations.grossTotal / 100).toFixed(2), // €12.00
 			total_excluding_tax: (calculations.netTotal / 100).toFixed(2), // €10.80
 			total_tax: (calculations.totalTax / 100).toFixed(2), // €1.20
