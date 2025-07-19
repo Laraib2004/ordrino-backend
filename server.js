@@ -153,56 +153,58 @@ app.post('/cash_payment', async (req, res) => {
 			});
 		}
 
-		// Calculate tax amounts manually first
-		const taxDetails = items.reduce((acc, item) => {
+		// Get all active tax rates first
+		const allTaxRates = await stripe.taxRates.list({
+			active: true,
+			inclusive: true,
+			limit: 100
+		});
+
+		// Calculate tax amounts and find/create rates
+		const taxDetails = await Promise.all(items.map(async (item) => {
 			const rate = item.item_type === 'reduced' ? 5 :
 				item.item_type === 'super_reduced' ? 4 : 10;
-			const unitTax = Math.round((Number(item.unit_price) * rate / (100 + rate)));
-			const totalTax = unitTax * item.quantity;
 
-			return {
-				...acc,
-				totalTax: acc.totalTax + totalTax,
-				items: [
-					...acc.items,
-					{
-						...item,
-						unit_tax: unitTax,
-						rate
-					}
-				]
-			};
-		}, { totalTax: 0, items: [] });
+			// Find existing rate with matching percentage
+			let taxRate = allTaxRates.data.find(r =>
+				r.percentage === rate &&
+				r.inclusive === true &&
+				r.country === 'IT'
+			);
 
-		// Create tax rates and invoice items
-		for (const item of taxDetails.items) {
-			let taxRate = await stripe.taxRates.list({
-				active: true,
-				inclusive: true,
-				percentage: item.rate,
-				limit: 1
-			});
-
-			if (!taxRate.data.length) {
+			// Create if not exists
+			if (!taxRate) {
 				taxRate = await stripe.taxRates.create({
-					display_name: `IVA ${item.rate}%`,
-					description: `Italian VAT ${item.rate}%`,
-					percentage: item.rate,
+					display_name: `IVA ${rate}%`,
+					description: `Italian VAT ${rate}%`,
+					percentage: rate,
 					inclusive: true,
 					country: 'IT',
 					jurisdiction: 'Italy',
 				});
-			} else {
-				taxRate = taxRate.data[0];
 			}
 
+			const unitTax = Math.round((Number(item.unit_price) * rate / (100 + rate));
+			const totalTax = unitTax * item.quantity;
+
+			return {
+				...item,
+				unit_tax: unitTax,
+				rate,
+				totalTax,
+				tax_rate_id: taxRate.id
+			};
+		}));
+
+		// Create invoice items with tax rates
+		for (const item of taxDetails) {
 			await stripe.invoiceItems.create({
 				customer: customer.id,
 				currency,
 				description: item.name,
 				quantity: item.quantity,
 				unit_amount_decimal: item.unit_price.toString(),
-				tax_rates: [taxRate.id],
+				tax_rates: [item.tax_rate_id],
 			});
 		}
 
@@ -235,9 +237,9 @@ app.post('/cash_payment', async (req, res) => {
 		});
 
 		// Calculate expected values
-		const expectedTotal = items.reduce((sum, item) =>
-			sum + (Number(item.unit_price) * item.quantity, 0));
-		const expectedTax = taxDetails.totalTax;
+		const expectedTotal = taxDetails.reduce((sum, item) =>
+			sum + (Number(item.unit_price) * item.quantity), 0);
+		const expectedTax = taxDetails.reduce((sum, item) => sum + item.totalTax, 0);
 
 		res.json({
 			invoice_id: paidInvoice.id,
@@ -246,15 +248,15 @@ app.post('/cash_payment', async (req, res) => {
 			total: (expectedTotal / 100).toFixed(2),
 			total_tax: (expectedTax / 100).toFixed(2),
 			tax_inclusive: true,
-			tax_breakdown: taxDetails.items.map(item => ({
+			tax_breakdown: taxDetails.map(item => ({
 				description: item.name,
 				quantity: item.quantity,
 				unit_price: (Number(item.unit_price) / 100).toFixed(2),
 				rate: item.rate,
 				tax_per_unit: (item.unit_tax / 100).toFixed(2),
-				total_tax: (item.unit_tax * item.quantity / 100).toFixed(2)
+				total_tax: (item.totalTax / 100).toFixed(2)
 			})),
-			stripe_tax: (paidInvoice.tax / 100).toFixed(2) // For verification
+			stripe_tax: (paidInvoice.tax / 100).toFixed(2)
 		});
 
 	} catch (error) {
