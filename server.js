@@ -176,7 +176,7 @@ app.post('/cash_payment', async (req, res) => {
 			customer: customer.id,
 			currency,
 			description: `IVA inclusa`,
-			quantity: 1,
+			quantity: 0,
 			unit_amount_decimal: calculations.totalTax.toString(),
 		});
 
