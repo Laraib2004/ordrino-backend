@@ -165,7 +165,7 @@ app.post('/cash_payment', async (req, res) => {
 			await stripe.invoiceItems.create({
 				customer: customer.id,
 				currency,
-				description: `${item.name} (IVA ${item.rate}% inclusa)`,
+				description: `${item.name} (IVA ${item.rate}%)`,
 				quantity: item.quantity,
 				unit_amount_decimal: item.unit_price.toString()
 			});
@@ -176,8 +176,17 @@ app.post('/cash_payment', async (req, res) => {
 			customer: customer.id,
 			currency,
 			description: `IVA inclusa`,
-			quantity: 0,
+			quantity: 1,
 			unit_amount_decimal: calculations.totalTax.toString(),
+		});
+
+		// Add negative adjustment to cancel out the tax line
+		await stripe.invoiceItems.create({
+			customer: customer.id,
+			currency,
+			description: `Adeguamento IVA già inclusa`,
+			quantity: 1,
+			unit_amount_decimal: (-calculations.totalTax).toString(),
 		});
 
 		// Create invoice (without automatic tax)
