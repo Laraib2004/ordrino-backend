@@ -194,7 +194,11 @@ app.post('/cash_payment', async (req, res) => {
 		});
 
 		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
-		await stripe.invoices.pay(invoice.id, { paid_out_of_band: true });
+		if (invoice.status !== 'paid') {
+			await stripe.invoices.pay(invoice.id, {
+				paid_out_of_band: true, // Tells Stripe this is already paid externally
+			});
+		}
 
 		// Return YOUR calculations (not Stripe's)
 		res.json({
