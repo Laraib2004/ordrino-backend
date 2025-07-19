@@ -169,7 +169,7 @@ app.post('/cash_payment', async (req, res) => {
 			country: 'IT',
 			jurisdiction: 'Italy',
 		});
-
+		console.log(calculations);
 		// Create invoice items (using the original prices)
 		for (const item of calculations.items) {
 			await stripe.invoiceItems.create({
