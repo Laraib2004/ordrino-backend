@@ -167,7 +167,7 @@ app.post('/cash_payment', async (req, res) => {
 				currency,
 				description: `${item.name} (IVA ${item.rate}% inclusa)`,
 				quantity: item.quantity,
-				unit_amount_decimal: (item.itemNet/item.quantity).toString(), // Using NET amount
+				unit_amount_decimal: Math.round(item.itemNet/item.quantity).toString(), // Using NET amount
 			});
 		}
 
