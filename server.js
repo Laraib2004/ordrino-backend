@@ -160,19 +160,27 @@ app.post('/cash_payment', async (req, res) => {
 			};
 		}, { grossTotal: 0, netTotal: 0, totalTax: 0, items: [] });
 
-		// Create invoice items WITHOUT tax rates
+		// Create invoice items with NET amounts (excluding tax)
 		for (const item of calculations.items) {
 			await stripe.invoiceItems.create({
 				customer: customer.id,
 				currency,
 				description: `${item.name} (IVA ${item.rate}% inclusa)`,
 				quantity: item.quantity,
-				unit_amount_decimal: item.unit_price.toString(),
-				// NO tax_rates here - we'll add tax manually
+				unit_amount_decimal: item.itemNet.toString(), // Using NET amount
 			});
 		}
 
-		// Create invoice with TAX INCLUDED in the amount
+		// Add tax as a separate invoice item
+		await stripe.invoiceItems.create({
+			customer: customer.id,
+			currency,
+			description: `IVA inclusa`,
+			quantity: 1,
+			unit_amount_decimal: calculations.totalTax.toString(),
+		});
+
+		// Create invoice (without automatic tax)
 		let invoice = await stripe.invoices.create({
 			customer: customer.id,
 			collection_method: 'send_invoice',
@@ -182,18 +190,7 @@ app.post('/cash_payment', async (req, res) => {
 			metadata: {
 				payment_type: 'cash',
 				...metadata,
-			}
-		});
-
-		// Add tax as a separate invoice item
-		await stripe.invoiceItems.create({
-			customer: customer.id,
-			invoice: invoice.id,
-			currency,
-			description: `IVA 10% inclusa`,
-			quantity: 1,
-			unit_amount_decimal: calculations.totalTax.toString(),
-			tax_rates: [] // No additional tax on tax
+			},
 		});
 
 		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
