@@ -182,9 +182,7 @@ app.post('/cash_payment', async (req, res) => {
 			metadata: {
 				payment_type: 'cash',
 				...metadata,
-			},
-			// Add tax as a separate line item
-			tax_percent: 0 // Important! Prevents automatic tax calculation
+			}
 		});
 
 		// Add tax as a separate invoice item
