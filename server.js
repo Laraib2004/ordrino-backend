@@ -148,6 +148,7 @@ app.post('/cash_payment', async (req, res) => {
 			const rate = item.item_type === 'reduced' ? 5 :
 				item.item_type === 'super_reduced' ? 4 : 10;
 
+			console.log("RATE: "+rate)
 			const itemTotal = Number(item.unit_price) * item.quantity;
 			const itemTax = Number((itemTotal * (rate / 100)));
 			const itemNet = itemTotal - itemTax;
