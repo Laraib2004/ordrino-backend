@@ -180,7 +180,6 @@ app.post('/cash_payment', async (req, res) => {
 				active: true,
 				inclusive: true,
 				percentage: item.rate,
-				country: 'IT',
 				limit: 1
 			});
 
@@ -190,6 +189,7 @@ app.post('/cash_payment', async (req, res) => {
 					description: `Italian VAT ${item.rate}%`,
 					percentage: item.rate,
 					inclusive: true,
+					country: 'IT',
 					jurisdiction: 'Italy',
 				});
 			} else {
