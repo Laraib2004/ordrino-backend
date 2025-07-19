@@ -136,7 +136,7 @@ app.post('/cash_payment', async (req, res) => {
 
 		// Get or create "anonymous" customer
 		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
-		let customer = customers.data[0];
+		let customer = customers.data[1];
 
 		if (!customer) {
 			customer = await stripe.customers.create({
@@ -157,7 +157,7 @@ app.post('/cash_payment', async (req, res) => {
 		const taxDetails = items.reduce((acc, item) => {
 			const rate = item.item_type === 'reduced' ? 5 :
 				item.item_type === 'super_reduced' ? 4 : 10;
-			const unitTax = Math.round((Number(item.unit_price) * rate / (100 + rate));
+			const unitTax = Math.round((Number(item.unit_price) * rate / (100 + rate)));
 			const totalTax = unitTax * item.quantity;
 
 			return {
