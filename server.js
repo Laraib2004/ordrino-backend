@@ -144,7 +144,6 @@ app.post('/cash_payment', async (req, res) => {
 				email: anonymousCustomerEmail,
 				address: {
 					country: 'IT',
-					postal_code: "39100"
 				},
 				metadata: {
 					type: 'anonymous',
@@ -153,7 +152,6 @@ app.post('/cash_payment', async (req, res) => {
 				},
 			});
 		}
-		
 
 		// Calculate tax amounts manually first
 		const taxDetails = items.reduce((acc, item) => {
@@ -192,7 +190,6 @@ app.post('/cash_payment', async (req, res) => {
 					description: `Italian VAT ${item.rate}%`,
 					percentage: item.rate,
 					inclusive: true,
-					country: 'IT',
 					jurisdiction: 'Italy',
 				});
 			} else {
