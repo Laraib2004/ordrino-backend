@@ -168,7 +168,7 @@ app.post('/cash_payment', async (req, res) => {
 				display_name: `IVA ${percentage}%`,
 				description: `Italian VAT ${percentage}%`,
 				percentage,
-				inclusive: true,  // Changed to true for inclusive tax
+				inclusive: true,
 				country: 'IT',
 				jurisdiction: 'Italy',
 			});
@@ -193,8 +193,9 @@ app.post('/cash_payment', async (req, res) => {
 				currency,
 				description: name,
 				quantity,
-				unit_amount_decimal: unit_price, // convert euro to cents
+				unit_amount: unit_price, // already in cents
 				tax_rates: [taxRateObj.id],
+				tax_behavior: 'inclusive', // Explicitly set tax behavior
 			});
 		}
 
@@ -211,6 +212,9 @@ app.post('/cash_payment', async (req, res) => {
 				tax_code: 'N/A',
 				...metadata,
 			},
+			automatic_tax: {
+				enabled: true, // Ensure automatic tax calculation
+			},
 		});
 
 		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
@@ -222,14 +226,30 @@ app.post('/cash_payment', async (req, res) => {
 			});
 		}
 
-		const paidInvoice = await stripe.invoices.retrieve(invoice.id);
+		const paidInvoice = await stripe.invoices.retrieve(invoice.id, {
+			expand: ['total_tax_amounts.tax_rate'],
+		});
+
+		// Calculate expected tax for verification
+		const expectedTax = items.reduce((sum, item) => {
+			const percentage = item.item_type === 'reduced' ? 5 :
+				item.item_type === 'super_reduced' ? 4 : 10;
+			const itemTax = Math.round((item.unit_price * item.quantity) * percentage / (100 + percentage));
+			return sum + itemTax;
+		}, 0);
 
 		res.json({
 			invoice_id: paidInvoice.id,
 			hosted_invoice_url: paidInvoice.hosted_invoice_url,
 			invoice_pdf: paidInvoice.invoice_pdf,
 			total: (paidInvoice.total / 100).toFixed(2),
+			total_tax: (paidInvoice.tax / 100).toFixed(2),
+			expected_tax: (expectedTax / 100).toFixed(2),
 			tax_inclusive: true,
+			tax_breakdown: paidInvoice.total_tax_amounts.map(tax => ({
+				rate: tax.tax_rate.percentage,
+				amount: (tax.amount / 100).toFixed(2),
+			})),
 		});
 
 	} catch (error) {
