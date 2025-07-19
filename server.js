@@ -178,7 +178,7 @@ app.post('/cash_payment', async (req, res) => {
 				description: `${item.name} (IVA ${item.rate}% inclusa)`,
 				quantity: item.quantity,
 				unit_amount_decimal: item.unit_price.toString(),
-				tax_behavior: inclusive,
+				tax_behavior: "inclusive",
 				tax_rates: [standardVAT.id], // Using the same rate for all for simplicity
 			});
 		}
