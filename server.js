@@ -149,7 +149,7 @@ app.post('/cash_payment', async (req, res) => {
 				item.item_type === 'super_reduced' ? 4 : 10;
 
 			const itemTotal = Number(item.unit_price) * item.quantity;
-			const itemTax = Math.round((itemTotal * rate) / (100 + rate));
+			const itemTax = Math.round((itemTotal * (rate / 100)));
 			const itemNet = itemTotal - itemTax;
 
 			return {
