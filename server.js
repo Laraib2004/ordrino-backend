@@ -184,7 +184,7 @@ app.post('/cash_payment', async (req, res) => {
 				});
 			}
 
-			const unitTax = Math.round((Number(item.unit_price) * rate / (100 + rate));
+			const unitTax = Math.round((Number(item.unit_price) * rate / (100 + rate)));
 			const totalTax = unitTax * item.quantity;
 
 			return {
