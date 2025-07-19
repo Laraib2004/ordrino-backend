@@ -190,12 +190,12 @@ app.post('/cash_payment', async (req, res) => {
 				currency,
 				description: name,
 				quantity,
-				unit_amount_decimal: unit_price, // already in cents
+				unit_amount_decimal: unit_price.toString(), // must be string and already in cents
 				tax_rates: [taxRateObj.id],
 			});
 		}
 
-		// Create invoice WITHOUT automatic tax
+		// Create invoice
 		let invoice = await stripe.invoices.create({
 			customer: customer.id,
 			collection_method: 'send_invoice',
@@ -208,7 +208,6 @@ app.post('/cash_payment', async (req, res) => {
 				tax_code: 'N/A',
 				...metadata,
 			},
-			// Removed automatic_tax since we're manually setting tax rates
 		});
 
 		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
@@ -224,9 +223,9 @@ app.post('/cash_payment', async (req, res) => {
 			expand: ['total_tax_amounts.tax_rate'],
 		});
 
-		// Calculate expected totals for verification
-		const expectedTotal = items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
-		const expectedTax = paidInvoice.total_tax_amounts.reduce((sum, tax) => sum + tax.amount, 0);
+		// Safely calculate expected totals
+		const expectedTotal = items.reduce((sum, item) => sum + (Number(item.unit_price) * item.quantity, 0));
+		const expectedTax = (paidInvoice.total_tax_amounts || []).reduce((sum, tax) => sum + tax.amount, 0);
 
 		res.json({
 			invoice_id: paidInvoice.id,
@@ -237,10 +236,10 @@ app.post('/cash_payment', async (req, res) => {
 			expected_total: (expectedTotal / 100).toFixed(2),
 			expected_tax: (expectedTax / 100).toFixed(2),
 			tax_inclusive: true,
-			tax_breakdown: paidInvoice.total_tax_amounts.map(tax => ({
-				rate: tax.tax_rate.percentage,
+			tax_breakdown: (paidInvoice.total_tax_amounts || []).map(tax => ({
+				rate: tax.tax_rate?.percentage || 0,
 				amount: (tax.amount / 100).toFixed(2),
-				description: tax.tax_rate.description,
+				description: tax.tax_rate?.description || 'IVA',
 			})),
 		});
 
