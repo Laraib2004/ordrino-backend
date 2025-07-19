@@ -193,7 +193,7 @@ app.post('/cash_payment', async (req, res) => {
 				currency,
 				description: name,
 				quantity,
-				unit_amount_decimal: Math.round(unit_price * 100), // convert euro to cents
+				unit_amount_decimal: unit_price, // convert euro to cents
 				tax_rates: [taxRateObj.id],
 			});
 		}
