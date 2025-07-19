@@ -56,52 +56,88 @@ app.post('/create_payment_intent', async (req, res) => {
 
 // --- Example endpoint for capturing a Payment Intent (as discussed previously) ---
 app.post('/capture_payment_intent', async (req, res) => {
-	const { payment_intent_id } = req.body;
+	const { payment_intent_id, items = [], currency = 'eur', metadata = {} } = req.body;
 	console.log(`Received request to capture PaymentIntent: ${payment_intent_id}`);
 
 	if (!payment_intent_id) {
 		return res.status(400).json({ error: 'Payment Intent ID is required.' });
 	}
 
+	if (!Array.isArray(items) || items.length === 0) {
+		return res.status(400).json({ error: 'At least one item is required.' });
+	}
+
 	try {
-		// Step 1: Capture the PaymentIntent
-		const paymentIntent = await stripe.paymentIntents.capture(payment_intent_id);
-		console.log(`PaymentIntent ${paymentIntent.id} captured. Status: ${paymentIntent.status}`);
+		const anonymousCustomerEmail = 'anonymous_card@yourdomain.com';
 
-		// Step 2: Get amount and customer info
-		const { amount, currency, customer, description } = paymentIntent;
-
-		let invoiceCustomer = customer;
-		if (!invoiceCustomer) {
-			// If customer is not set on PaymentIntent, create a default one
-			const tempCustomer = await stripe.customers.create({
-				email: 'anonymous@yourdomain.com',
-				name: 'Card',
-			});
-			invoiceCustomer = tempCustomer.id;
-		}
-
-		// Step 3: Create invoice item
-		await stripe.invoiceItems.create({
-			customer: invoiceCustomer,
-			amount: amount, // Already in cents
-			currency: currency || 'eur',
-			description: description || 'Captured card payment',
+		// Get or create customer
+		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
+		let customer = customers.data[0] || await stripe.customers.create({
+			name: 'Walk-in Customer',
+			email: anonymousCustomerEmail,
+			address: { country: 'IT' },
+			metadata: { type: 'anonymous', tax_code: 'N/A', ...metadata }
 		});
 
-		// Step 4: Create invoice (include invoice items)
+		// Calculate totals YOUR WAY (correct calculation)
+		const calculations = items.reduce((acc, item) => {
+			const rate = item.item_type === 'reduced' ? 5 :
+				item.item_type === 'super_reduced' ? 4 : 10;
+
+			const itemTotal = Number(item.unit_price) * item.quantity;
+			const itemTax = Math.round((itemTotal * (rate / 100)));
+			const itemNet = itemTotal - itemTax;
+
+			return {
+				grossTotal: acc.grossTotal + itemTotal,
+				netTotal: acc.netTotal + itemNet,
+				totalTax: acc.totalTax + itemTax,
+				items: [...acc.items, { ...item, rate, itemTotal, itemTax, itemNet }]
+			};
+		}, { grossTotal: 0, netTotal: 0, totalTax: 0, items: [] });
+
+		// Create invoice items with NET amounts (excluding tax)
+		for (const item of calculations.items) {
+			await stripe.invoiceItems.create({
+				customer: customer.id,
+				currency,
+				description: `${item.name} (IVA ${item.rate}%)`,
+				quantity: item.quantity,
+				unit_amount_decimal: item.unit_price.toString()
+			});
+		}
+
+		// Add tax as a separate invoice item
+		await stripe.invoiceItems.create({
+			customer: customer.id,
+			currency,
+			description: `IVA inclusa`,
+			quantity: 1,
+			unit_amount_decimal: calculations.totalTax.toString(),
+		});
+
+		// Add negative adjustment to cancel out the tax line
+		await stripe.invoiceItems.create({
+			customer: customer.id,
+			currency,
+			description: `Adeguamento IVA già inclusa`,
+			quantity: 1,
+			unit_amount_decimal: (-calculations.totalTax).toString(),
+		});
+
+		// Create invoice (without automatic tax)
 		let invoice = await stripe.invoices.create({
-			customer: invoiceCustomer,
+			customer: customer.id,
 			collection_method: 'send_invoice',
 			days_until_due: 0,
-			pending_invoice_items_behavior: 'include', // Include previously created invoice items
+			pending_invoice_items_behavior: 'include',
+			footer: "Importi IVA inclusa ai sensi dell'Art. 13 DPR 633/72",
 			metadata: {
-				source: 'card',
-				linked_payment_intent: paymentIntent.id,
+				payment_type: 'card',
+				...metadata,
 			},
 		});
 
-		// Step 5: Finalize and mark as paid (optional, since card payment already completed)
 		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
 		if (invoice.status !== 'paid') {
 			await stripe.invoices.pay(invoice.id, {
@@ -109,17 +145,32 @@ app.post('/capture_payment_intent', async (req, res) => {
 			});
 		}
 
-		// Step 6: Return invoice info
-		const paidInvoice = await stripe.invoices.retrieve(invoice.id);
+		// Return YOUR calculations (not Stripe's)
 		res.json({
-			status: paymentIntent.status,
-			invoice_id: paidInvoice.id,
-			hosted_invoice_url: paidInvoice.hosted_invoice_url,
-			invoice_pdf: paidInvoice.invoice_pdf,
+			client_secret: paymentIntent.client_secret,
+			hosted_invoice_url: invoice.hosted_invoice_url,
+			invoice_id: invoice.id,
+			total: (calculations.grossTotal / 100).toFixed(2), // €12.00
+			total_excluding_tax: (calculations.netTotal / 100).toFixed(2), // €10.80
+			total_tax: (calculations.totalTax / 100).toFixed(2), // €1.20
+			tax_inclusive: true,
+			items: calculations.items.map(item => ({
+				description: item.name,
+				quantity: item.quantity,
+				unit_price: (Number(item.unit_price) / 100).toFixed(2), // €4.00
+				rate: item.rate,
+				item_tax: (item.itemTax / 100).toFixed(2), // €0.40
+				item_net: (item.itemNet / 100).toFixed(2) // €3.60
+			})),
+			invoice_pdf: invoice.invoice_pdf
 		});
+
 	} catch (error) {
-		console.error('Error capturing PaymentIntent and creating invoice:', error);
-		res.status(500).json({ error: error.message });
+		console.error('Error creating cash payment invoice:', error);
+		res.status(500).json({
+			error: error.message,
+			code: error.code || 'payment_error'
+		});
 	}
 });
 
