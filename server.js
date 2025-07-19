@@ -190,7 +190,7 @@ app.post('/cash_payment', async (req, res) => {
 				currency,
 				description: name,
 				quantity,
-				unit_amount: unit_price, // already in cents
+				unit_amount_decimal: unit_price, // already in cents
 				tax_rates: [taxRateObj.id],
 			});
 		}
