@@ -145,7 +145,8 @@ app.post('/capture_payment_intent', async (req, res) => {
 			});
 		}
 
-		// Return YOUR calculations (not Stripe's)
+		console.log("status: " + paymentIntent)
+
 		res.json({
 			status: paymentIntent.status,
 			hosted_invoice_url: invoice.hosted_invoice_url,
