@@ -69,7 +69,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 	try {
 		const anonymousCustomerEmail = 'anonymous_card@yourdomain.com';
-
+		const paymentIntent = await stripe.paymentIntents.capture(payment_intent_id);
 		// Get or create customer
 		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
 		let customer = customers.data[0] || await stripe.customers.create({
@@ -147,7 +147,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 		// Return YOUR calculations (not Stripe's)
 		res.json({
-			client_secret: paymentIntent.client_secret,
+			status: paymentIntent.status,
 			hosted_invoice_url: invoice.hosted_invoice_url,
 			invoice_id: invoice.id,
 			total: (calculations.grossTotal / 100).toFixed(2), // €12.00
