@@ -149,19 +149,6 @@ app.post('/capture_payment_intent', async (req, res) => {
 		res.json({
 			status: paymentIntent.status,
 			hosted_invoice_url: invoice.hosted_invoice_url,
-			invoice_id: invoice.id,
-			total: (calculations.grossTotal / 100).toFixed(2), // €12.00
-			total_excluding_tax: (calculations.netTotal / 100).toFixed(2), // €10.80
-			total_tax: (calculations.totalTax / 100).toFixed(2), // €1.20
-			tax_inclusive: true,
-			items: calculations.items.map(item => ({
-				description: item.name,
-				quantity: item.quantity,
-				unit_price: (Number(item.unit_price) / 100).toFixed(2), // €4.00
-				rate: item.rate,
-				item_tax: (item.itemTax / 100).toFixed(2), // €0.40
-				item_net: (item.itemNet / 100).toFixed(2) // €3.60
-			})),
 			invoice_pdf: invoice.invoice_pdf
 		});
 
