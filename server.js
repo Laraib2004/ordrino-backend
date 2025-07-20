@@ -69,7 +69,9 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 	try {
 		const anonymousCustomerEmail = 'anonymous_card@yourdomain.com';
+		console.log("status: ")
 		const paymentIntent = await stripe.paymentIntents.capture(payment_intent_id);
+		console.log("status: " + paymentIntent)
 		// Get or create customer
 		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
 		let customer = customers.data[0] || await stripe.customers.create({
@@ -144,8 +146,6 @@ app.post('/capture_payment_intent', async (req, res) => {
 				paid_out_of_band: true, // Tells Stripe this is already paid externally
 			});
 		}
-
-		console.log("status: " + paymentIntent)
 
 		res.json({
 			status: paymentIntent.status,
