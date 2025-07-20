@@ -58,13 +58,14 @@ app.post('/create_payment_intent', async (req, res) => {
 app.post('/capture_payment_intent', async (req, res) => {
 	const { payment_intent_id, items = [], currency = 'eur', metadata = {} } = req.body;
 	console.log(`Received request to capture PaymentIntent: ${payment_intent_id}`);
-	console.log("status: " + req.body);
 
 	if (!payment_intent_id) {
+		console.log("status1: " + payment_intent_id);
 		return res.status(400).json({ error: 'Payment Intent ID is required.' });
 	}
 
 	if (!Array.isArray(items) || items.length === 0) {
+		console.log("status2: " + items);
 		return res.status(400).json({ error: 'At least one item is required.' });
 	}
 
