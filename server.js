@@ -58,6 +58,7 @@ app.post('/create_payment_intent', async (req, res) => {
 app.post('/capture_payment_intent', async (req, res) => {
 	const { payment_intent_id, items = [], currency = 'eur', metadata = {} } = req.body;
 	console.log(`Received request to capture PaymentIntent: ${payment_intent_id}`);
+	console.log("status: " + req.body);
 
 	if (!payment_intent_id) {
 		return res.status(400).json({ error: 'Payment Intent ID is required.' });
@@ -69,9 +70,8 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 	try {
 		const anonymousCustomerEmail = 'anonymous_card@yourdomain.com';
-		console.log("status: ")
 		const paymentIntent = await stripe.paymentIntents.capture(payment_intent_id);
-		console.log("status: " + paymentIntent)
+		console.log("status: " + paymentIntent);
 		// Get or create customer
 		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
 		let customer = customers.data[0] || await stripe.customers.create({
