@@ -293,12 +293,7 @@ app.post('/cash_payment', async (req, res) => {
 			collection_method: 'send_invoice',
 			days_until_due: 0,
 			description: `Fattura ${invoiceNumber}`,
-			footer: [
-				`Importi IVA inclusa ai sensi dell'Art. 13 DPR 633/72`,
-				`Beneficiario: ${recipient_code}`,
-				`P.IVA: ${business_vat}`,
-				`${business_name} - ${business_address}, ${business_city} (${province})`
-			].join('\n'),
+			
 			metadata: {
 				// Business Information
 				business_name,
@@ -320,7 +315,12 @@ app.post('/cash_payment', async (req, res) => {
 				customer_vat,
 				customer_fiscal_code
 			},
-			
+			custom_fields: [
+				{ name: "Codice SDI", value: recipient_code },
+				{ name: "P.IVA", value: business_vat },
+				{ name: "Data Emissione", value: issue_date },
+				{ name: "Data Pagamento", value: payment_date }
+			]
 		});
 
 		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
