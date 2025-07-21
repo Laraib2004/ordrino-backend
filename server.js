@@ -183,9 +183,9 @@ app.post('/cash_payment', async (req, res) => {
 		customer_vat = "N/A",
 		customer_fiscal_code = "N/A",
 		// Dates
-		issue_date = new Date().toISOString().split('T')[0],
-		payment_date = new Date().toISOString().split('T')[0],
-		service_date = new Date().toISOString().split('T')[0],
+		issue_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm'),
+		payment_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm'),
+		service_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm'),
 	} = req.body;
 
 	// Input validation
