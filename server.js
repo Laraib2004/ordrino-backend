@@ -378,10 +378,10 @@ app.post('/cash_payment', async (req, res) => {
 
 			res.json({
 				success: true,
-				invoice_id: finalizedInvoice.id,
+				invoice_id: invoice.id,
 				invoice_number: invoiceNumber,
-				hosted_invoice_url: finalizedInvoice.hosted_invoice_url,
-				invoice_pdf: finalizedInvoice.invoice_pdf,
+				hosted_invoice_url: invoice.hosted_invoice_url,
+				invoice_pdf: invoice.invoice_pdf,
 				business_info: {
 					name: business_name,
 					address: business_address,
