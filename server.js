@@ -163,22 +163,75 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 
 app.post('/cash_payment', async (req, res) => {
-	const { items = [], currency = 'eur', metadata = {} } = req.body;
+	const {
+        items = [],
+        currency = 'eur',
+        // Business Information
+        business_address,
+        business_city,
+        business_country,
+        business_name,
+        province,
+        recipient_code,
+        business_vat,
+        // Customer Information (defaults for B2C)
+        customer_name = "Cliente al dettaglio",
+        customer_address = "N/A",
+        customer_city = "N/A",
+        customer_postal_code = "00000",
+        customer_country = "IT",
+        customer_vat = "N/A",
+        customer_fiscal_code = "N/A",
+        // Dates
+        issue_date = new Date().toISOString().split('T')[0],
+        payment_date = new Date().toISOString().split('T')[0],
+        service_date = new Date().toISOString().split('T')[0],
+		metadata = {}
+    } = req.body;
+
 
 	if (!Array.isArray(items) || items.length === 0) {
 		return res.status(400).json({ error: 'At least one item is required.' });
 	}
 
+	const requiredBusinessFields = [
+		'business_address', 'business_city', 'business_country',
+		'business_name', 'business_vat', 'recipient_code'
+	];
+	const missingFields = requiredBusinessFields.filter(field => !req.body[field]);
+
+	if (missingFields.length > 0) {
+		return res.status(400).json({
+			error: 'Missing required business fields',
+			missing_fields: missingFields
+		});
+	}
+
+
 	try {
+		// Generate sequential invoice number (implement your sequence system)
+		const invoiceNumber = `INV-${Date.now()}`;
+
 		const anonymousCustomerEmail = 'anonymous@yourdomain.com';
 
 		// Get or create customer
 		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
 		let customer = customers.data[0] || await stripe.customers.create({
-			name: 'Walk-in Customer',
 			email: anonymousCustomerEmail,
-			address: { country: 'IT' },
-			metadata: { type: 'anonymous', tax_code: 'N/A', ...metadata }
+			name: customer_name,
+			address: {
+				line1: customer_address,
+				city: customer_city,
+				postal_code: customer_postal_code,
+				state: province,
+				country: customer_country
+			},
+			metadata: {
+				fiscal_code: customer_fiscal_code,
+				vat_number: customer_vat,
+				invoice_type: 'B2C'
+			}
+
 		});
 
 		// Calculate totals YOUR WAY (correct calculation)
@@ -198,16 +251,24 @@ app.post('/cash_payment', async (req, res) => {
 			};
 		}, { grossTotal: 0, netTotal: 0, totalTax: 0, items: [] });
 
-		// Create invoice items with NET amounts (excluding tax)
-		for (const item of calculations.items) {
-			await stripe.invoiceItems.create({
+		// Create invoice items with service dates
+		await Promise.all(calculations.items.map(item =>
+			stripe.invoiceItems.create({
 				customer: customer.id,
 				currency,
 				description: `${item.name} (IVA ${item.rate}%)`,
 				quantity: item.quantity,
-				unit_amount_decimal: item.unit_price.toString()
-			});
-		}
+				unit_amount_decimal: item.unit_price.toString(),
+				period: {
+					start: Math.floor(new Date(item.service_date).getTime() / 1000),
+					end: Math.floor(new Date(item.service_date).getTime() / 1000)
+				},
+				metadata: {
+					tax_rate: `${item.rate}%`,
+					service_date: item.service_date
+				}
+			})
+		));
 
 		// Add tax as a separate invoice item
 		await stripe.invoiceItems.create({
@@ -227,17 +288,45 @@ app.post('/cash_payment', async (req, res) => {
 			unit_amount_decimal: (-calculations.totalTax).toString(),
 		});
 
-		// Create invoice (without automatic tax)
-		let invoice = await stripe.invoices.create({
+		// Create fully compliant invoice
+		const invoice = await stripe.invoices.create({
 			customer: customer.id,
 			collection_method: 'send_invoice',
 			days_until_due: 0,
-			pending_invoice_items_behavior: 'include',
-			footer: "Importi IVA inclusa ai sensi dell'Art. 13 DPR 633/72",
+			description: `Fattura ${invoiceNumber}`,
+			footer: [
+				`Importi IVA inclusa ai sensi dell'Art. 13 DPR 633/72`,
+				`Beneficiario: ${recipient_code}`,
+				`P.IVA: ${business_vat}`,
+				`${business_name} - ${business_address}, ${business_city} (${province})`
+			].join('\n'),
 			metadata: {
+				// Business Information
+				business_name,
+				business_address,
+				business_city,
+				business_province: province,
+				business_country,
+				business_vat,
+				recipient_code,
+
+				// Invoice Information
+				invoice_number: invoiceNumber,
+				issue_date,
+				payment_date,
 				payment_type: 'cash',
-				...metadata,
+
+				// Customer Information
+				customer_name,
+				customer_vat,
+				customer_fiscal_code
 			},
+			custom_fields: [
+				{ name: "Codice SDI", value: recipient_code },
+				{ name: "P.IVA", value: business_vat },
+				{ name: "Data Emissione", value: issue_date },
+				{ name: "Data Pagamento", value: payment_date }
+			]
 		});
 
 		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
@@ -247,31 +336,77 @@ app.post('/cash_payment', async (req, res) => {
 			});
 		}
 
+		// Format tax details by rate
+		const taxDetails = calculations.items.reduce((acc, item) => {
+			const rateKey = `${item.rate}%`;
+			acc[rateKey] = acc[rateKey] || { taxable_amount: 0, tax_amount: 0 };
+			acc[rateKey].taxable_amount += item.itemNet / 100;
+			acc[rateKey].tax_amount += item.itemTax / 100;
+			return acc;
+		}, {});
+
 		// Return YOUR calculations (not Stripe's)
+		// Return complete response
 		res.json({
-			hosted_invoice_url: invoice.hosted_invoice_url,
-			invoice_id: invoice.id,
-			total: (calculations.grossTotal / 100).toFixed(2), // €12.00
-			total_excluding_tax: (calculations.netTotal / 100).toFixed(2), // €10.80
-			total_tax: (calculations.totalTax / 100).toFixed(2), // €1.20
-			tax_inclusive: true,
+			success: true,
+			invoice_id: finalizedInvoice.id,
+			invoice_number: invoiceNumber,
+			hosted_invoice_url: finalizedInvoice.hosted_invoice_url,
+			invoice_pdf: finalizedInvoice.invoice_pdf,
+
+			// Business Information
+			business_info: {
+				name: business_name,
+				address: business_address,
+				city: business_city,
+				province,
+				country: business_country,
+				vat_number: business_vat,
+				recipient_code
+			},
+
+			// Invoice Totals
+			totals: {
+				gross: (calculations.grossTotal / 100).toFixed(2),
+				net: (calculations.netTotal / 100).toFixed(2),
+				tax: (calculations.totalTax / 100).toFixed(2)
+			},
+
+			// Tax Breakdown
+			tax_details: taxDetails,
+
+			// Items List
 			items: calculations.items.map(item => ({
 				description: item.name,
 				quantity: item.quantity,
-				unit_price: (Number(item.unit_price) / 100).toFixed(2), // €4.00
-				rate: item.rate,
-				item_tax: (item.itemTax / 100).toFixed(2), // €0.40
-				item_net: (item.itemNet / 100).toFixed(2) // €3.60
+				unit_price: (item.unit_price / 100).toFixed(2),
+				rate: `${item.rate}%`,
+				tax_amount: (item.itemTax / 100).toFixed(2),
+				net_amount: (item.itemNet / 100).toFixed(2),
+				service_date: item.service_date
 			})),
-			invoice_pdf: invoice.invoice_pdf
+
+			// Dates
+			dates: {
+				issue_date,
+				payment_date,
+				service_date
+			}
 		});
 
 	} catch (error) {
-		console.error('Error creating cash payment invoice:', error);
-		res.status(500).json({
-			error: error.message,
-			code: error.code || 'payment_error'
+		console.error('Invoice creation error:', {
+			message: error.message,
+			code: error.code,
+			stack: error.stack
 		});
+
+		res.status(500).json({
+			error: 'Invoice creation failed',
+			message: error.message,
+			code: error.code || 'invoice_error'
+		});
+
 	}
 });
 
