@@ -299,13 +299,28 @@ app.post('/cash_payment', async (req, res) => {
 				`P.IVA: ${business_vat}`,
 				`${business_name} - ${business_address}, ${business_city} (${province})`
 			].join('\n'),
+			metadata: {
+				// Business Information
+				business_name,
+				business_address,
+				business_city,
+				business_province: province,
+				business_country,
+				business_vat,
+				recipient_code,
+
+				// Invoice Information
+				invoice_number: invoiceNumber,
+				issue_date,
+				payment_date,
+				payment_type: 'cash',
+
+				// Customer Information
+				customer_name,
+				customer_vat,
+				customer_fiscal_code
+			},
 			
-			custom_fields: [
-				{ name: "Codice SDI", value: recipient_code },
-				{ name: "P.IVA", value: business_vat },
-				{ name: "Data Emissione", value: issue_date },
-				{ name: "Data Pagamento", value: payment_date }
-			]
 		});
 
 		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
