@@ -360,7 +360,11 @@ app.post('/cash_payment', async (req, res) => {
 			});
 
 			const finalizedInvoice = await stripe.invoices.finalizeInvoice(invoice.id);
-			await stripe.invoices.pay(finalizedInvoice.id, { paid_out_of_band: true });
+			if (finalizedInvoice.status !== 'paid') {
+				await stripe.invoices.pay(finalizedInvoice.id, {
+					paid_out_of_band: true,
+				});
+			}
 
 			// Format response
 			const taxDetails = calculations.items.reduce((acc, item) => {
