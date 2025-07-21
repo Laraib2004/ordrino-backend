@@ -288,7 +288,6 @@ app.post('/cash_payment', async (req, res) => {
 					description: `${item.name} (IVA ${item.rate}%)`,
 					quantity: item.quantity,
 					unit_amount_decimal: item.unit_price.toString(),
-					period,
 					metadata: {
 						tax_rate: `${item.rate}%`,
 						service_date: item.service_date
