@@ -163,6 +163,17 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 
 app.post('/cash_payment', async (req, res) => {
+	// Helper function to format dates
+	function formatDate(date, format) {
+		const pad = num => num.toString().padStart(2, '0');
+		return format
+			.replace('DD', pad(date.getDate()))
+			.replace('MM', pad(date.getMonth() + 1))
+			.replace('YYYY', date.getFullYear())
+			.replace('HH', pad(date.getHours()))
+			.replace('mm', pad(date.getMinutes()));
+	}
+	
 	const {
 		items = [],
 		currency = 'eur',
