@@ -288,6 +288,7 @@ app.post('/cash_payment', async (req, res) => {
 					description: `${item.name} (IVA ${item.rate}%)`,
 					quantity: item.quantity,
 					unit_amount_decimal: item.unit_price.toString(),
+					period,
 					metadata: {
 						tax_rate: `${item.rate}%`,
 						service_date: item.service_date
@@ -328,6 +329,7 @@ app.post('/cash_payment', async (req, res) => {
 				customer: customer.id,
 				collection_method: 'send_invoice',
 				days_until_due: 0,
+				pending_invoice_items_behavior: 'include',
 				description: `Fattura ${invoiceNumber}`,
 				footer: [
 					`Importi IVA inclusa ai sensi dell'Art. 13 DPR 633/72`,
