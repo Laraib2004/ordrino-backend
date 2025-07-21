@@ -163,17 +163,6 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 
 app.post('/cash_payment', async (req, res) => {
-	// Helper function to format dates
-	function formatDate(date, format) {
-		const pad = num => num.toString().padStart(2, '0');
-		return format
-			.replace('DD', pad(date.getDate()))
-			.replace('MM', pad(date.getMonth() + 1))
-			.replace('YYYY', date.getFullYear())
-			.replace('HH', pad(date.getHours()))
-			.replace('mm', pad(date.getMinutes()));
-	}
-	
 	const {
 		items = [],
 		currency = 'eur',
@@ -193,11 +182,22 @@ app.post('/cash_payment', async (req, res) => {
 		customer_country = "IT",
 		customer_vat = "N/A",
 		customer_fiscal_code = "N/A",
-		// Dates
+		// Dates (now in DD-MM-YYYY HH:mm format)
 		issue_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm'),
 		payment_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm'),
 		service_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm'),
 	} = req.body;
+
+	// Helper function to format dates
+	function formatDate(date, format) {
+		const pad = num => num.toString().padStart(2, '0');
+		return format
+			.replace('DD', pad(date.getDate()))
+			.replace('MM', pad(date.getMonth() + 1))
+			.replace('YYYY', date.getFullYear())
+			.replace('HH', pad(date.getHours()))
+			.replace('mm', pad(date.getMinutes()));
+	}
 
 	// Input validation
 	if (!Array.isArray(items) || items.length === 0) {
@@ -253,15 +253,22 @@ app.post('/cash_payment', async (req, res) => {
 				item.item_type === 'super_reduced' ? 4 : 10;
 
 			const itemTotal = Number(item.unit_price) * item.quantity;
-			const itemTax = Math.round((itemTotal * (rate / 100)));
+			const itemTax = Math.round(itemTotal * (rate / 100)); // Updated tax calculation
 			const itemNet = itemTotal - itemTax;
 
-			// Validate and format service date
-			const serviceDate = item.service_date || service_date;
-			const serviceDateTime = new Date(serviceDate).getTime();
+			// Parse service date from DD-MM-YYYY HH:mm format
+			let serviceDateTime;
+			try {
+				const [datePart, timePart] = (item.service_date || service_date).split(' ');
+				const [day, month, year] = datePart.split('-');
+				const [hours, minutes] = timePart.split(':');
+				serviceDateTime = new Date(`${year}-${month}-${day}T${hours}:${minutes}:00`).getTime();
 
-			if (isNaN(serviceDateTime)) {
-				throw new Error(`Invalid service date: ${serviceDate}`);
+				if (isNaN(serviceDateTime)) {
+					throw new Error('Invalid date');
+				}
+			} catch (e) {
+				throw new Error(`Invalid service date format: ${item.service_date || service_date}. Expected DD-MM-YYYY HH:mm`);
 			}
 
 			return {
@@ -274,7 +281,7 @@ app.post('/cash_payment', async (req, res) => {
 					itemTotal,
 					itemTax,
 					itemNet,
-					service_date: serviceDate,
+					service_date: item.service_date || service_date,
 					service_timestamp: Math.floor(serviceDateTime / 1000)
 				}]
 			};
@@ -282,24 +289,19 @@ app.post('/cash_payment', async (req, res) => {
 
 		// Create invoice items with proper period handling
 		try {
-
-			// Create invoice items with NET amounts (excluding tax)
 			for (const item of calculations.items) {
 				const period = {
 					start: item.service_timestamp,
-					end: item.service_timestamp + 86400 // Add 24 hours (86400 seconds)
+					end: item.service_timestamp
 				};
 
-				if (period.end <= period.start) {
-					throw new Error(`Invalid period for item ${item.name}: end must be greater than start`);
-				}
 				await stripe.invoiceItems.create({
 					customer: customer.id,
 					currency,
 					description: `${item.name} (IVA ${item.rate}%)`,
 					quantity: item.quantity,
 					unit_amount_decimal: item.unit_price.toString(),
-					period,
+					period: period,
 					metadata: {
 						tax_rate: `${item.rate}%`,
 						service_date: item.service_date
