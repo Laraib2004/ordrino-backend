@@ -271,7 +271,9 @@ app.post('/cash_payment', async (req, res) => {
 
 		// Create invoice items with proper period handling
 		try {
-			await Promise.all(calculations.items.map(item => {
+
+			// Create invoice items with NET amounts (excluding tax)
+			for (const item of calculations.items) {
 				const period = {
 					start: item.service_timestamp,
 					end: item.service_timestamp + 86400 // Add 24 hours (86400 seconds)
@@ -280,8 +282,7 @@ app.post('/cash_payment', async (req, res) => {
 				if (period.end <= period.start) {
 					throw new Error(`Invalid period for item ${item.name}: end must be greater than start`);
 				}
-
-				return stripe.invoiceItems.create({
+				await stripe.invoiceItems.create({
 					customer: customer.id,
 					currency,
 					description: `${item.name} (IVA ${item.rate}%)`,
@@ -293,7 +294,7 @@ app.post('/cash_payment', async (req, res) => {
 						service_date: item.service_date
 					}
 				});
-			}));
+			}
 		} catch (error) {
 			console.error('Invoice items creation failed:', error);
 			throw new Error('Failed to create invoice items');
@@ -359,9 +360,9 @@ app.post('/cash_payment', async (req, res) => {
 				]
 			});
 
-			const finalizedInvoice = await stripe.invoices.finalizeInvoice(invoice.id);
-			if (finalizedInvoice.status !== 'paid') {
-				await stripe.invoices.pay(finalizedInvoice.id, {
+			invoice = await stripe.invoices.finalizeInvoice(invoice.id);
+			if (invoice.status !== 'paid') {
+				await stripe.invoices.pay(invoice.id, {
 					paid_out_of_band: true,
 				});
 			}
