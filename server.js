@@ -270,7 +270,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 			invoice = await stripe.invoices.finalizeInvoice(invoice.id);
 			if (invoice.status !== 'paid') {
 				await stripe.invoices.pay(invoice.id, {
-					paymentIntent: payment_intent_id,
+					paid_out_of_band: true,
 				});
 			}
 
