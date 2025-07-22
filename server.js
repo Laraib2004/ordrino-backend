@@ -463,14 +463,14 @@ app.post('/cash_payment', async (req, res) => {
 		try {
 			// Create tax rates if needed (simplified version)
 			const taxRates = await stripe.taxRates.list({
-				limit: 3,
+				limit: 20,
 			});
 
 			let standardVAT;
 
 
 			taxRates.data.map(async tax =>{
-				if (tax.percentage == 10) {
+				if (tax.active == true && tax.percentage == 10) {
 					standardVAT = tax;
 				}
 				else {
