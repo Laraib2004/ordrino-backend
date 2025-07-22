@@ -237,6 +237,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 				customer: customer.id,
 				collection_method: 'send_invoice',
 				days_until_due: 0,
+				description: 'Tap to Pay payment',
 				pending_invoice_items_behavior: 'include',
 				footer: [
 					`Importi IVA inclusa ai sensi dell'Art. 13 DPR 633/72`,
@@ -254,7 +255,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 					recipient_code,
 					issue_date,
 					payment_date,
-					payment_type: 'cash',
+					payment_type: 'card',
 					customer_name,
 					customer_vat,
 					customer_fiscal_code
@@ -270,7 +271,8 @@ app.post('/capture_payment_intent', async (req, res) => {
 			invoice = await stripe.invoices.finalizeInvoice(invoice.id);
 			if (invoice.status !== 'paid') {
 				await stripe.invoices.pay(invoice.id, {
-					paid_out_of_band: true,
+					source: 'terminal',
+					off_session: false
 				});
 			}
 
