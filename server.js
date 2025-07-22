@@ -469,7 +469,7 @@ app.post('/cash_payment', async (req, res) => {
 			let standardVAT;
 
 			taxRates.map(async tax =>{
-				if (tax.display_name == "IVA 10%") {
+				if (tax.percentage == 10) {
 					standardVAT = tax;
 				}
 				else {
