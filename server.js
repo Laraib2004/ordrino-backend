@@ -468,7 +468,8 @@ app.post('/cash_payment', async (req, res) => {
 
 			let standardVAT;
 
-			taxRates.map(async tax =>{
+
+			taxRates.data.map(async tax =>{
 				if (tax.percentage == 10) {
 					standardVAT = tax;
 				}
