@@ -462,14 +462,28 @@ app.post('/cash_payment', async (req, res) => {
 		// Create invoice items with proper period handling
 		try {
 			// Create tax rates if needed (simplified version)
-			const standardVAT = await stripe.taxRates.create({
-				display_name: `IVA 10%`,
-				description: `Italian VAT 10%`,
-				percentage: 10,
-				inclusive: true,
-				country: 'IT',
-				jurisdiction: 'Italy',
+			const taxRates = await stripe.taxRates.list({
+				limit: 3,
 			});
+
+			let standardVAT;
+
+			taxRates.map(async tax =>{
+				if (tax.display_name == "IVA 10%") {
+					standardVAT = tax;
+				}
+				else {
+					standardVAT = await stripe.taxRates.create({
+						display_name: `IVA 10%`,
+						description: `Italian VAT 10%`,
+						percentage: 10,
+						inclusive: true,
+						country: 'IT',
+						jurisdiction: 'Italy',
+					});
+				}
+			});
+
 			for (const item of calculations.items) {
 				const period = {
 					start: item.service_timestamp,
