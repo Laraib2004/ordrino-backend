@@ -183,6 +183,30 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 		// Create invoice items with proper period handling
 		try {
+			// Create tax rates if needed (simplified version)
+			const taxRates = await stripe.taxRates.list({
+				limit: 20,
+			});
+
+			let standardVAT;
+
+
+			taxRates.data.map(async tax => {
+				if (tax.active == true && tax.percentage == 10) {
+					standardVAT = tax;
+				}
+				else {
+					standardVAT = await stripe.taxRates.create({
+						display_name: `IVA 10%`,
+						description: `Italian VAT 10%`,
+						percentage: 10,
+						inclusive: true,
+						country: 'IT',
+						jurisdiction: 'Italy',
+					});
+				}
+			});
+
 			for (const item of calculations.items) {
 				const period = {
 					start: item.service_timestamp,
@@ -199,7 +223,8 @@ app.post('/capture_payment_intent', async (req, res) => {
 					metadata: {
 						tax_rate: `${item.rate}%`,
 						service_date: item.service_date
-					}
+					},
+					tax_rates: [standardVAT.id]
 				});
 			}
 		} catch (error) {
@@ -209,7 +234,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 
 		// Create tax adjustment items
-		try {
+		/*try {
 			await stripe.invoiceItems.create({
 				customer: customer.id,
 				currency,
@@ -228,7 +253,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 		} catch (error) {
 			console.error('Tax items creation failed:', error);
 			throw new Error('Failed to create tax adjustment items');
-		}
+		}*/
 
 		// Create and finalize invoice
 		let invoice;
