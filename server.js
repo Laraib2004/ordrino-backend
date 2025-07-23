@@ -41,6 +41,7 @@ app.post('/create_payment_intent', async (req, res) => {
 
 	try {
 		// Create or retrieve customer
+		const anonymousCustomerEmail = 'anonymous_card@yourdomain.com';
 		let customer;
 		try {
 			const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
