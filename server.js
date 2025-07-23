@@ -40,9 +40,35 @@ app.post('/create_payment_intent', async (req, res) => {
 	}
 
 	try {
+		// Create or retrieve customer
+		let customer;
+		try {
+			const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
+			customer = customers.data[0] || await stripe.customers.create({
+				email: anonymousCustomerEmail,
+				name: customer_name,
+				address: {
+					line1: customer_address,
+					city: customer_city,
+					postal_code: customer_postal_code,
+					state: province,
+					country: customer_country
+				},
+				metadata: {
+					fiscal_code: customer_fiscal_code,
+					vat_number: customer_vat,
+					invoice_type: 'B2C'
+				}
+			});
+		} catch (error) {
+			console.error('Customer creation failed:', error);
+			throw new Error('Failed to create customer record');
+		}
+
 		const paymentIntent = await stripe.paymentIntents.create({
 			amount: amount, // Amount in cents
 			currency: currency,
+			customer,
 			payment_method_types: ['card_present'], // Essential for Terminal payments
 			capture_method: 'manual', // Recommended for Terminal to allow explicit capture
 		});
