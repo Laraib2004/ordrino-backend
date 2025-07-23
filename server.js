@@ -557,8 +557,7 @@ app.post('/cash_payment', async (req, res) => {
 					},
 					{ name: "Codice SDI", value: recipient_code },
 					{ name: "P.IVA", value: business_vat },
-					{ name: "Data Emissione", value: issue_date },
-					{ name: "Data Pagamento", value: payment_date }
+					{ name: "Data Emissione e Pagamento", value: payment_date },
 				]
 			});
 
