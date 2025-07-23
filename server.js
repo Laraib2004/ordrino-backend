@@ -504,11 +504,12 @@ app.post('/cash_payment', async (req, res) => {
 		// Create and finalize invoice with automatic tax
 		let invoice;
 		try {
+			// 1. First create the basic invoice
 			invoice = await stripe.invoices.create({
 				customer: customer.id,
 				collection_method: 'send_invoice',
 				days_until_due: 0,
-				automatic_tax: { enabled: true }, // Enable automatic tax calculation
+				automatic_tax: { enabled: true }, // Enable automatic tax
 				description: 'Pagamento contanti',
 				pending_invoice_items_behavior: 'include',
 				footer: [
@@ -531,28 +532,28 @@ app.post('/cash_payment', async (req, res) => {
 					customer_name,
 					customer_vat,
 					customer_fiscal_code
-				},
-				custom_fields: [
-					{ name: "Codice SDI", value: recipient_code },
-					{ name: "P.IVA", value: business_vat },
-					{ name: "Data Emissione", value: issue_date },
-					{ name: "Data Pagamento", value: payment_date }
-				]
+				}
 			});
 
-			// Then finalize it to get tax amounts
+			// 2. Finalize to calculate taxes
 			const finalizedInvoice = await stripe.invoices.finalizeInvoice(invoice.id);
 
-			// Calculate total tax
-			const totalTax = finalizedInvoice.total_tax_amounts.reduce(
-				(sum, tax) => sum + tax.amount, 0) / 100;
+			// 3. Safely calculate total tax
+			let totalTax = 0;
+			let taxDisplay = "N/A";
 
-			// Now update with custom fields including total tax
-			invoice = await stripe.invoices.update(invoice.id, {
+			if (finalizedInvoice.total_tax_amounts && finalizedInvoice.total_tax_amounts.length > 0) {
+				totalTax = finalizedInvoice.total_tax_amounts.reduce(
+					(sum, tax) => sum + tax.amount, 0) / 100;
+				taxDisplay = `€${totalTax.toFixed(2)}`;
+			}
+
+			// 4. Update with tax information
+			invoice = await stripe.invoices.update(finalizedInvoice.id, {
 				custom_fields: [
 					{
 						name: "Totale IVA",
-						value: `€${totalTax.toFixed(2)}`
+						value: taxDisplay
 					},
 					{ name: "Codice SDI", value: recipient_code },
 					{ name: "P.IVA", value: business_vat },
@@ -561,6 +562,7 @@ app.post('/cash_payment', async (req, res) => {
 				]
 			});
 
+			// 5. Mark as paid if needed
 			if (invoice.status !== 'paid') {
 				await stripe.invoices.pay(invoice.id, {
 					paid_out_of_band: true,
