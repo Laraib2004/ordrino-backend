@@ -209,6 +209,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 				customer: customer.id,
 				collection_method: 'send_invoice',
 				days_until_due: 0,
+				auto_advance: false, // Don't attempt collection
 				automatic_tax: { enabled: true }, // This is critical for total VAT
 				description: 'Tap to Pay payment',
 				pending_invoice_items_behavior: 'include',
@@ -242,7 +243,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 			});
 
 			invoice = await stripe.invoices.finalizeInvoice(invoice.id);
-			if (invoice.status !== 'paid') {
+			/*if (invoice.status !== 'paid') {
 				await stripe.invoices.pay(invoice.id, {
 					paid_out_of_band: true
 				});
@@ -254,7 +255,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 					invoice_id: invoice.id,
 					invoice_number: invoice.number
 				}
-			});
+			});*/
 
 			res.json({
 				status: paymentIntent.status,
