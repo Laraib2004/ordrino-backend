@@ -484,8 +484,7 @@ app.post('/cash_payment', async (req, res) => {
 				await stripe.invoiceItems.create({
 					customer: customer.id,
 					pricing: {
-						price: prices.data[0].id
-					},
+						price: prices.data[0].id},
 					quantity: item.quantity,
 					period: {
 						start: serviceTimestamp,
@@ -504,12 +503,11 @@ app.post('/cash_payment', async (req, res) => {
 		// Create and finalize invoice with automatic tax
 		let invoice;
 		try {
-			// 1. First create the basic invoice
 			invoice = await stripe.invoices.create({
 				customer: customer.id,
 				collection_method: 'send_invoice',
 				days_until_due: 0,
-				automatic_tax: { enabled: true }, // Enable automatic tax
+				automatic_tax: { enabled: true }, // Enable automatic tax calculation
 				description: 'Pagamento contanti',
 				pending_invoice_items_behavior: 'include',
 				footer: [
@@ -532,36 +530,16 @@ app.post('/cash_payment', async (req, res) => {
 					customer_name,
 					customer_vat,
 					customer_fiscal_code
-				}
-			});
-
-			// 2. Finalize to calculate taxes
-			const finalizedInvoice = await stripe.invoices.finalizeInvoice(invoice.id);
-
-			// 3. Safely calculate total tax
-			let totalTax = 0;
-			let taxDisplay = "N/A";
-
-			if (finalizedInvoice.total_tax_amounts && finalizedInvoice.total_tax_amounts.length > 0) {
-				totalTax = finalizedInvoice.total_tax_amounts.reduce(
-					(sum, tax) => sum + tax.amount, 0) / 100;
-				taxDisplay = `€${totalTax.toFixed(2)}`;
-			}
-
-			// 4. Update with tax information
-			invoice = await stripe.invoices.update(finalizedInvoice.id, {
+				},
 				custom_fields: [
-					{
-						name: "Totale IVA",
-						value: taxDisplay
-					},
 					{ name: "Codice SDI", value: recipient_code },
 					{ name: "P.IVA", value: business_vat },
-					{ name: "Data Emissione e Pagamento", value: payment_date },
+					{ name: "Data Emissione", value: issue_date },
+					{ name: "Data Pagamento", value: payment_date }
 				]
 			});
 
-			// 5. Mark as paid if needed
+			invoice = await stripe.invoices.finalizeInvoice(invoice.id);
 			if (invoice.status !== 'paid') {
 				await stripe.invoices.pay(invoice.id, {
 					paid_out_of_band: true,
