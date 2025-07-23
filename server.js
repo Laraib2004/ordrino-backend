@@ -188,24 +188,17 @@ app.post('/capture_payment_intent', async (req, res) => {
 				limit: 20,
 			});
 
-			let standardVAT;
-
-
-			taxRates.data.map(async tax => {
-				if (tax.active == true && tax.percentage == 10) {
-					standardVAT = tax;
-				}
-				else {
-					standardVAT = await stripe.taxRates.create({
-						display_name: `IVA 10%`,
-						description: `Italian VAT 10%`,
-						percentage: 10,
-						inclusive: true,
-						country: 'IT',
-						jurisdiction: 'Italy',
-					});
-				}
-			});
+			let standardVAT = taxRates.data.find(tax =>
+				tax.active && tax.percentage === 10 && tax.inclusive
+			);
+			if (!standardVAT) {
+				standardVAT = await stripe.taxRates.create({
+					display_name: 'IVA 10%',
+					inclusive: true,
+					percentage: 10,
+					country: 'IT',
+				});
+			}
 
 			for (const item of calculations.items) {
 				const period = {
@@ -492,24 +485,17 @@ app.post('/cash_payment', async (req, res) => {
 				limit: 20,
 			});
 
-			let standardVAT;
-
-
-			taxRates.data.map(async tax =>{
-				if (tax.active == true && tax.percentage == 10) {
-					standardVAT = tax;
-				}
-				else {
-					standardVAT = await stripe.taxRates.create({
-						display_name: `IVA 10%`,
-						description: `Italian VAT 10%`,
-						percentage: 10,
-						inclusive: true,
-						country: 'IT',
-						jurisdiction: 'Italy',
-					});
-				}
-			});
+			let standardVAT = taxRates.data.find(tax =>
+				tax.active && tax.percentage === 10 && tax.inclusive
+			);
+			if (!standardVAT) {
+				standardVAT = await stripe.taxRates.create({
+					display_name: 'IVA 10%',
+					inclusive: true,
+					percentage: 10,
+					country: 'IT',
+				});
+			}
 
 			for (const item of calculations.items) {
 				const period = {
