@@ -248,7 +248,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 				});
 			}
 
-			// 7. Update PaymentIntent with invoice reference
+			// Update PaymentIntent with invoice reference
 			await stripe.paymentIntents.update(payment_intent_id, {
 				metadata: {
 					invoice_id: invoice.id,
