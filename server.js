@@ -193,10 +193,12 @@ app.post('/capture_payment_intent', async (req, res) => {
 			);
 			if (!standardVAT) {
 				standardVAT = await stripe.taxRates.create({
-					display_name: 'IVA 10%',
-					inclusive: true,
+					display_name: `IVA 10%`,
+					description: `Italian VAT 10%`,
 					percentage: 10,
+					inclusive: true,
 					country: 'IT',
+					jurisdiction: 'Italy',
 				});
 			}
 
@@ -490,10 +492,12 @@ app.post('/cash_payment', async (req, res) => {
 			);
 			if (!standardVAT) {
 				standardVAT = await stripe.taxRates.create({
-					display_name: 'IVA 10%',
-					inclusive: true,
+					display_name: `IVA 10%`,
+					description: `Italian VAT 10%`,
 					percentage: 10,
+					inclusive: true,
 					country: 'IT',
+					jurisdiction: 'Italy',
 				});
 			}
 
