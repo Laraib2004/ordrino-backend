@@ -40,31 +40,8 @@ app.post('/create_payment_intent', async (req, res) => {
 	}
 
 	try {
-		// Create or retrieve customer
 		const anonymousCustomerEmail = 'anonymous_card@yourdomain.com';
-		let customer;
-		try {
-			const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
-			customer = customers.data[0] || await stripe.customers.create({
-				email: anonymousCustomerEmail,
-				name: customer_name,
-				address: {
-					line1: customer_address,
-					city: customer_city,
-					postal_code: customer_postal_code,
-					state: province,
-					country: customer_country
-				},
-				metadata: {
-					fiscal_code: customer_fiscal_code,
-					vat_number: customer_vat,
-					invoice_type: 'B2C'
-				}
-			});
-		} catch (error) {
-			console.error('Customer creation failed:', error);
-			throw new Error('Failed to create customer record');
-		}
+		let customer = await getOrCreateCustomer(anonymousCustomerEmail);
 
 		const paymentIntent = await stripe.paymentIntents.create({
 			amount: amount, // Amount in cents
@@ -140,32 +117,10 @@ app.post('/capture_payment_intent', async (req, res) => {
 	}
 
 	try {
-		const anonymousCustomerEmail = 'anonymous_card@yourdomain.com';
 		const paymentIntent = await stripe.paymentIntents.capture(payment_intent_id);
-		// Create or retrieve customer
-		let customer;
-		try {
-			const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
-			customer = customers.data[0] || await stripe.customers.create({
-				email: anonymousCustomerEmail,
-				name: customer_name,
-				address: {
-					line1: customer_address,
-					city: customer_city,
-					postal_code: customer_postal_code,
-					state: province,
-					country: customer_country
-				},
-				metadata: {
-					fiscal_code: customer_fiscal_code,
-					vat_number: customer_vat,
-					invoice_type: 'B2C'
-				}
-			});
-		} catch (error) {
-			console.error('Customer creation failed:', error);
-			throw new Error('Failed to create customer record');
-		}
+
+		const anonymousCustomerEmail = 'anonymous_card@yourdomain.com';
+		let customer = await getOrCreateCustomer(anonymousCustomerEmail);
 
 
 		// Create invoice items with proper period handling
@@ -281,11 +236,6 @@ app.post('/capture_payment_intent', async (req, res) => {
 					expand: ['payments']
 				}
 			);
-			/*if (invoice.status !== 'paid') {
-				await stripe.invoices.pay(invoice.id, {
-					paid_out_of_band: true
-				});
-			}*/
 
 			// Update PaymentIntent with invoice reference
 			await stripe.paymentIntents.update(payment_intent_id, {
@@ -375,31 +325,7 @@ app.post('/cash_payment', async (req, res) => {
 
 	try {
 		const anonymousCustomerEmail = 'anonymous@yourdomain.com';
-
-		// Create or retrieve customer
-		let customer;
-		try {
-			const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
-			customer = customers.data[0] || await stripe.customers.create({
-				email: anonymousCustomerEmail,
-				name: customer_name,
-				address: {
-					line1: customer_address,
-					city: customer_city,
-					postal_code: customer_postal_code,
-					state: province,
-					country: customer_country
-				},
-				metadata: {
-					fiscal_code: customer_fiscal_code,
-					vat_number: customer_vat,
-					invoice_type: 'B2C'
-				}
-			});
-		} catch (error) {
-			console.error('Customer creation failed:', error);
-			throw new Error('Failed to create customer record');
-		}
+		let customer = await getOrCreateCustomer(anonymousCustomerEmail);
 
 		// Create invoice items with proper period handling
 		try {
@@ -533,6 +459,34 @@ app.post('/cash_payment', async (req, res) => {
 		});
 	}
 });
+
+async function getOrCreateCustomer(anonymousCustomerEmail) {
+	// Create or retrieve customer
+	let customer;
+	try {
+		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
+		customer = customers.data[0] || await stripe.customers.create({
+			email: anonymousCustomerEmail,
+			name: customer_name,
+			address: {
+				line1: customer_address,
+				city: customer_city,
+				postal_code: customer_postal_code,
+				state: province,
+				country: customer_country
+			},
+			metadata: {
+				fiscal_code: customer_fiscal_code,
+				vat_number: customer_vat,
+				invoice_type: 'B2C'
+			}
+		});
+		return customer;
+	} catch (error) {
+		console.error('Customer creation failed:', error);
+		throw new Error('Failed to create customer record');
+	}
+}
 
 // Start the server
 app.listen(PORT, () => {
