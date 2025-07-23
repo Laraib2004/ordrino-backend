@@ -244,6 +244,15 @@ app.post('/capture_payment_intent', async (req, res) => {
 				]
 			});
 
+			invoice = await stripe.invoices.attachPayment(
+				invoice.id,
+				{
+					payment_intent: payment_intent_id,
+					expand: ['payments'],
+				}
+			);
+
+
 			invoice = await stripe.invoices.finalizeInvoice(invoice.id);
 			/*if (invoice.status !== 'paid') {
 				await stripe.invoices.pay(invoice.id, {
