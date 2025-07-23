@@ -69,7 +69,7 @@ app.post('/create_payment_intent', async (req, res) => {
 		const paymentIntent = await stripe.paymentIntents.create({
 			amount: amount, // Amount in cents
 			currency: currency,
-			customer,
+			customer: customer.id,
 			payment_method_types: ['card_present'], // Essential for Terminal payments
 			capture_method: 'manual', // Recommended for Terminal to allow explicit capture
 		});
