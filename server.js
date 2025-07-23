@@ -209,7 +209,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 				customer: customer.id,
 				collection_method: 'send_invoice',
 				days_until_due: 0,
-				//automatic_tax: { enabled: true }, // This is critical for total VAT
+				automatic_tax: { enabled: true }, // This is critical for total VAT
 				description: 'Tap to Pay payment',
 				pending_invoice_items_behavior: 'include',
 				footer: [
