@@ -483,7 +483,9 @@ app.post('/cash_payment', async (req, res) => {
 
 				await stripe.invoiceItems.create({
 					customer: customer.id,
-					price: prices.data[0].id,
+					pricing: {
+						price: prices.data[0].id
+					},
 					quantity: item.quantity,
 					period: {
 						start: serviceTimestamp,
