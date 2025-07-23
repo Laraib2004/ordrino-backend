@@ -276,7 +276,8 @@ app.post('/capture_payment_intent', async (req, res) => {
 			invoice = await stripe.invoices.attachPayment(
 				invoice.id,
 				{
-					payment_intent: payment_intent_id
+					payment_intent: payment_intent_id,
+					expand: ['payments']
 				}
 			);
 			/*if (invoice.status !== 'paid') {
