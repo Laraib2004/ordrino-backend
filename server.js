@@ -141,114 +141,66 @@ app.post('/capture_payment_intent', async (req, res) => {
 		}
 
 
-		// Calculate totals with proper tax breakdown
-		const calculations = items.reduce((acc, item) => {
-			const rate = item.item_type === 'reduced' ? 5 :
-				item.item_type === 'super_reduced' ? 4 : 10;
-
-			const itemTotal = Number(item.unit_price) * item.quantity;
-			const itemTax = Math.round(itemTotal * (rate / 100)); // Updated tax calculation
-			const itemNet = itemTotal - itemTax;
-
-			// Parse service date from DD-MM-YYYY HH:mm format
-			let serviceDateTime;
-			try {
-				const [datePart, timePart] = (item.service_date || service_date).split(' ');
-				const [day, month, year] = datePart.split('-');
-				const [hours, minutes] = timePart.split(':');
-				serviceDateTime = new Date(`${year}-${month}-${day}T${hours}:${minutes}:00`).getTime();
-
-				if (isNaN(serviceDateTime)) {
-					throw new Error('Invalid date');
-				}
-			} catch (e) {
-				throw new Error(`Invalid service date format: ${item.service_date || service_date}. Expected DD-MM-YYYY HH:mm`);
-			}
-
-			return {
-				grossTotal: acc.grossTotal + itemTotal,
-				netTotal: acc.netTotal + itemNet,
-				totalTax: acc.totalTax + itemTax,
-				items: [...acc.items, {
-					...item,
-					rate,
-					itemTotal,
-					itemTax,
-					itemNet,
-					service_date: item.service_date || service_date,
-					service_timestamp: Math.floor(serviceDateTime / 1000)
-				}]
-			};
-		}, { grossTotal: 0, netTotal: 0, totalTax: 0, items: [] });
-
 		// Create invoice items with proper period handling
 		try {
-			// Create tax rates if needed (simplified version)
-			const taxRates = await stripe.taxRates.list({
-				limit: 20,
-			});
-
-			let standardVAT = taxRates.data.find(tax =>
-				tax.active && tax.percentage === 10 && tax.inclusive
-			);
-			if (!standardVAT) {
-				standardVAT = await stripe.taxRates.create({
-					display_name: `IVA 10%`,
-					description: `Italian VAT 10%`,
-					percentage: 10,
-					inclusive: true,
-					country: 'IT',
-					jurisdiction: 'Italy',
+			for (const item of items) {
+				// Search for matching Stripe product
+				const stripeProducts = await stripe.products.search({
+					query: `active:\'true\' AND name:\'${item.name}\'`,
+					limit: 1
 				});
-			}
 
-			for (const item of calculations.items) {
-				const period = {
-					start: item.service_timestamp,
-					end: item.service_timestamp
-				};
+				if (!stripeProducts.data[0]) {
+					throw new Error(`Product "${item.name}" not found in Stripe`);
+				}
+
+				// Get the default price for this product
+				const prices = await stripe.prices.list({
+					product: stripeProducts.data[0].id,
+					limit: 1
+				});
+
+				if (!prices.data[0]) {
+					throw new Error(`No price found for product "${item.name}"`);
+				}
+
+				// Parse service date safely
+				let serviceTimestamp;
+				try {
+					const dateString = item.service_date || service_date;
+					const [datePart, timePart] = dateString.split(' ');
+					const [day, month, year] = datePart.split('-');
+					const [hours, minutes] = timePart.split(':');
+					const dateObj = new Date(`${year}-${month}-${day}T${hours}:${minutes}:00`);
+
+					if (isNaN(dateObj.getTime())) {
+						throw new Error('Invalid date format');
+					}
+					serviceTimestamp = Math.floor(dateObj.getTime() / 1000);
+				} catch (e) {
+					console.error(`Invalid service date format: ${item.service_date || service_date}`);
+					serviceTimestamp = Math.floor(Date.now() / 1000); // Fallback to current time
+				}
 
 				await stripe.invoiceItems.create({
 					customer: customer.id,
-					currency,
-					description: `${item.name} (IVA ${item.rate}%)`,
-					quantity: item.quantity,
-					unit_amount_decimal: item.unit_price.toString(),
-					period: period,
-					metadata: {
-						tax_rate: `${item.rate}%`,
-						service_date: item.service_date
+					pricing: {
+						price: prices.data[0].id
 					},
-					tax_rates: [standardVAT.id]
+					quantity: item.quantity,
+					period: {
+						start: serviceTimestamp,
+						end: serviceTimestamp
+					},
+					metadata: {
+						service_date: item.service_date || service_date
+					}
 				});
 			}
 		} catch (error) {
 			console.error('Invoice items creation failed:', error);
-			throw new Error('Failed to create invoice items');
+			throw new Error('Failed to create invoice items: ' + error.message);
 		}
-
-
-		// Create tax adjustment items
-		/*try {
-			await stripe.invoiceItems.create({
-				customer: customer.id,
-				currency,
-				description: `IVA inclusa`,
-				quantity: 1,
-				unit_amount_decimal: calculations.totalTax.toString(),
-			});
-
-			await stripe.invoiceItems.create({
-				customer: customer.id,
-				currency,
-				description: `Adeguamento IVA già inclusa`,
-				quantity: 1,
-				unit_amount_decimal: (-calculations.totalTax).toString(),
-			});
-		} catch (error) {
-			console.error('Tax items creation failed:', error);
-			throw new Error('Failed to create tax adjustment items');
-		}*/
 
 		// Create and finalize invoice
 		let invoice;
@@ -296,50 +248,12 @@ app.post('/capture_payment_intent', async (req, res) => {
 				});
 			}
 
-			// Format response
-			const taxDetails = calculations.items.reduce((acc, item) => {
-				const rateKey = `${item.rate}%`;
-				acc[rateKey] = acc[rateKey] || { taxable_amount: 0, tax_amount: 0 };
-				acc[rateKey].taxable_amount += item.itemNet / 100;
-				acc[rateKey].tax_amount += item.itemTax / 100;
-				return acc;
-			}, {});
-
 			res.json({
 				status: paymentIntent.status,
 				success: true,
 				invoice_id: invoice.id,
 				hosted_invoice_url: invoice.hosted_invoice_url,
 				invoice_pdf: invoice.invoice_pdf,
-				business_info: {
-					name: business_name,
-					address: business_address,
-					city: business_city,
-					province,
-					country: business_country,
-					vat_number: business_vat,
-					recipient_code
-				},
-				totals: {
-					gross: (calculations.grossTotal / 100).toFixed(2),
-					net: (calculations.netTotal / 100).toFixed(2),
-					tax: (calculations.totalTax / 100).toFixed(2)
-				},
-				tax_details: taxDetails,
-				items: calculations.items.map(item => ({
-					description: item.name,
-					quantity: item.quantity,
-					unit_price: (item.unit_price / 100).toFixed(2),
-					rate: `${item.rate}%`,
-					tax_amount: (item.itemTax / 100).toFixed(2),
-					net_amount: (item.itemNet / 100).toFixed(2),
-					service_date: item.service_date
-				})),
-				dates: {
-					issue_date,
-					payment_date,
-					service_date
-				}
 			});
 
 		} catch (error) {
