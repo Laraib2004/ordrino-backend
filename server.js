@@ -220,6 +220,8 @@ app.post('/capture_payment_intent', async (req, res) => {
 					`${business_name} - ${business_address}, ${business_city} (${province})`
 				].join('\n'),
 				metadata: {
+					payment_intent: payment_intent_id, // Reference
+					payment_collected_via: 'terminal',
 					business_name,
 					business_address,
 					business_city,
@@ -247,7 +249,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 				await stripe.invoices.pay(invoice.id, {
 					paid_out_of_band: true
 				});
-			}
+			}*/
 
 			// Update PaymentIntent with invoice reference
 			await stripe.paymentIntents.update(payment_intent_id, {
@@ -255,7 +257,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 					invoice_id: invoice.id,
 					invoice_number: invoice.number
 				}
-			});*/
+			});
 
 			res.json({
 				status: paymentIntent.status,
