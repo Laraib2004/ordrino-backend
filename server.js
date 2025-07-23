@@ -565,6 +565,7 @@ app.post('/cash_payment', async (req, res) => {
 				customer: customer.id,
 				collection_method: 'send_invoice',
 				days_until_due: 0,
+				automatic_tax: { enabled: true }, // This is critical for total VAT
 				pending_invoice_items_behavior: 'include',
 				footer: [
 					`Importi IVA inclusa ai sensi dell'Art. 13 DPR 633/72`,
