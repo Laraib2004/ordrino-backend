@@ -501,6 +501,11 @@ app.post('/cash_payment', async (req, res) => {
 			throw new Error('Failed to create invoice items: ' + error.message);
 		}
 
+		// Helper function to format currency
+		function formatEuro(amount) {
+			return `€${amount.toFixed(2)}`;
+		}
+
 		// Create and finalize invoice with automatic tax
 		let invoice;
 		try {
@@ -533,6 +538,10 @@ app.post('/cash_payment', async (req, res) => {
 					customer_fiscal_code
 				},
 				custom_fields: [
+					{
+						name: "Totale IVA",
+						value: formatEuro(invoice.total_tax_amounts.reduce((sum, tax) => sum + tax.amount, 0) / 100)
+					},
 					{ name: "Codice SDI", value: recipient_code },
 					{ name: "P.IVA", value: business_vat },
 					{ name: "Data Emissione", value: issue_date },
