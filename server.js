@@ -440,7 +440,7 @@ app.post('/cash_payment', async (req, res) => {
 			throw new Error('Failed to create customer record');
 		}
 
-		// Create invoice items by searching Stripe products
+		// Create invoice items with proper period handling
 		try {
 			for (const item of items) {
 				// Search for matching Stripe product
@@ -463,16 +463,32 @@ app.post('/cash_payment', async (req, res) => {
 					throw new Error(`No price found for product "${item.name}"`);
 				}
 
-				const period = {
-					start: Math.floor(new Date(item.service_date || service_date).getTime() / 1000),
-					end: Math.floor(new Date(item.service_date || service_date).getTime() / 1000)
-				};
+				// Parse service date safely
+				let serviceTimestamp;
+				try {
+					const dateString = item.service_date || service_date;
+					const [datePart, timePart] = dateString.split(' ');
+					const [day, month, year] = datePart.split('-');
+					const [hours, minutes] = timePart.split(':');
+					const dateObj = new Date(`${year}-${month}-${day}T${hours}:${minutes}:00`);
+
+					if (isNaN(dateObj.getTime())) {
+						throw new Error('Invalid date format');
+					}
+					serviceTimestamp = Math.floor(dateObj.getTime() / 1000);
+				} catch (e) {
+					console.error(`Invalid service date format: ${item.service_date || service_date}`);
+					serviceTimestamp = Math.floor(Date.now() / 1000); // Fallback to current time
+				}
 
 				await stripe.invoiceItems.create({
 					customer: customer.id,
 					price: prices.data[0].id,
 					quantity: item.quantity,
-					period: period,
+					period: {
+						start: serviceTimestamp,
+						end: serviceTimestamp
+					},
 					metadata: {
 						service_date: item.service_date || service_date
 					}
@@ -480,7 +496,7 @@ app.post('/cash_payment', async (req, res) => {
 			}
 		} catch (error) {
 			console.error('Invoice items creation failed:', error);
-			throw new Error('Failed to create invoice items');
+			throw new Error('Failed to create invoice items: ' + error.message);
 		}
 
 		// Create and finalize invoice with automatic tax
