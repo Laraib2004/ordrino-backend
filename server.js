@@ -476,7 +476,7 @@ app.post('/create-update-product', async (req, res) => {
 			create
 		} = req.body;
 
-		if (create) {
+		if (!create) {
 			const stripeProducts = await stripe.products.search({
 				query: `active:\'true\' AND name:\'${itemName}\'`,
 				limit: 1
