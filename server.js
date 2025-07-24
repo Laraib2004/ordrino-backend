@@ -501,13 +501,21 @@ app.post('/create-update-product', async (req, res) => {
 				throw new Error(`Product "${itemName}" not found in Stripe`);
 			}
 
-			const price = await stripe.prices.create({
-				currency,
-				unit_amount: unit_amount,
-				product: product.id,
-				tax_behavior: "inclusive",
+			let price;
 
-			});
+			const priceOld = await stripe.prices.retrieve(product.default_price);
+
+			if (priceOld.unit_amount === unit_amount) {
+				price = priceOld;
+			} else {
+				price = await stripe.prices.create({
+					currency,
+					unit_amount: unit_amount,
+					product: product.id,
+					tax_behavior: "inclusive",
+
+				});
+			}
 
 			const productUpdate = await stripe.products.update(
 				product.id,
