@@ -468,37 +468,22 @@ app.post('/create-update-product', async (req, res) => {
 
 		const {
 			currency = "eur",
-			oldName,
 			itemName,
 			unit_amount,
 			available,
 			description,
 			tax_code,
-			create
+			create,
+			prod_id
 		} = req.body;
 
-		console.log(oldName);
-		console.log(itemName);
 
 		if (!create) {
-			let stripeProducts;
-			if (oldName === itemName) {
-				stripeProducts = await stripe.products.search({
-					query: `active:\'true\' AND name:\'${itemName}\'`,
-					limit: 1
-				});
-			} else {
-				stripeProducts = await stripe.products.search({
-					query: `active:\'true\' AND name:\'${oldName}\'`,
-					limit: 1
-				});
-			}
 
-
-			const product = stripeProducts.data[0];
+			const product = await stripe.products.retrieve(prod_id);
 
 			if (!product) {
-				throw new Error(`Product "${itemName}" not found in Stripe`);
+				throw new Error(`Product "${prod_id}" not found in Stripe`);
 			}
 
 			let price;
@@ -528,6 +513,10 @@ app.post('/create-update-product', async (req, res) => {
 				}
 			);
 
+			res.json({
+				prodId: productUpdate.id
+			});
+
 		}
 		else {
 			const product = await stripe.products.create({
@@ -542,11 +531,11 @@ app.post('/create-update-product', async (req, res) => {
 
 				}
 			});
-		}
 
-		res.json({
-			status: true
-		});
+			res.json({
+				prodId: product.id
+			});
+		}
 
 	} catch (error) {
 		console.error('Create/Updating Product failed:', {
