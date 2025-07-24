@@ -462,6 +462,86 @@ app.post('/cash_payment', async (req, res) => {
 	}
 });
 
+app.post('/create-update-product', async (req, res) => {
+
+	try {
+
+		const {
+			currency = "eur",
+			itemName,
+			unit_amount,
+			available,
+			description,
+			tax_code,
+			create
+		} = req.body;
+
+		if (create) {
+			const stripeProducts = await stripe.products.search({
+				query: `active:\'true\' AND name:\'${itemName}\'`,
+				limit: 1
+			});
+
+			const product = stripeProducts.data[0];
+
+			if (!product) {
+				throw new Error(`Product "${itemName}" not found in Stripe`);
+			}
+
+			const price = await stripe.prices.create({
+				currency,
+				unit_amount: unit_amount,
+				product: product.id,
+				tax_behavior: "inclusive",
+
+			});
+
+			const productUpdate = await stripe.products.update(
+				product.id,
+				{
+					default_price: price.id,
+					description,
+					name: itemName,
+					tax_code,
+					active: available
+				}
+			);
+
+		}
+		else {
+			const product = await stripe.products.create({
+				name: itemName,
+				description,
+				tax_code,
+				active: available,
+				default_price_data: {
+					currency,
+					unit_amount,
+					tax_behavior: "inclusive",
+
+				}
+			});
+		}
+
+		res.json({
+			status: true
+		});
+
+	} catch (error) {
+		console.error('Create/Updating Product failed:', {
+			message: error.message,
+			stack: error.stack
+		});
+
+		res.status(500).json({
+			error: 'Create/Updating Product failed',
+			message: error.message,
+			code: error.code || 'create_update_product_error'
+		});
+	}
+
+});
+
 async function getOrCreateCustomer(anonymousCustomerEmail) {
 	// Create or retrieve customer
 	let customer;
