@@ -477,9 +477,6 @@ app.post('/create-update-product', async (req, res) => {
 			create
 		} = req.body;
 
-		console.log(oldName);
-		console.log(itemName);
-
 		if (!create) {
 			let stripeProducts;
 			if (oldName === itemName) {
