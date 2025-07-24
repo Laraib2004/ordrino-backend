@@ -463,68 +463,84 @@ app.post('/cash_payment', async (req, res) => {
 });
 
 app.post('/create-update-product', async (req, res) => {
-
 	try {
-
 		const {
 			currency = "eur",
 			itemName,
 			unit_amount,
-			available,
-			description,
+			available = true,  // default to true if not provided
+			description = "",  // default empty description
 			tax_code,
-			create
+			create = false    // default to false if not provided
 		} = req.body;
 
-		if (!create) {
-			const stripeProducts = await stripe.products.search({
-				query: `active:\'true\' AND name:\'${itemName}\'`,
-				limit: 1
-			});
-
-			const product = stripeProducts.data[0];
-
-			if (!product) {
-				throw new Error(`Product "${itemName}" not found in Stripe`);
-			}
-
-			const price = await stripe.prices.create({
-				currency,
-				unit_amount: unit_amount,
-				product: product.id,
-				tax_behavior: "inclusive",
-
-			});
-
-			const productUpdate = await stripe.products.update(
-				product.id,
-				{
-					default_price: price.id,
-					description,
-					name: itemName,
-					tax_code,
-					active: available
-				}
-			);
-
+		// Input validation
+		if (!itemName || !unit_amount) {
+			throw new Error('Missing required fields: itemName and unit_amount are required');
 		}
-		else {
+
+		if (create) {
+			// Create new product
 			const product = await stripe.products.create({
 				name: itemName,
 				description,
 				tax_code,
 				active: available,
 				default_price_data: {
-					currency,
-					unit_amount,
+					currency: currency.toLowerCase(),
+					unit_amount: parseInt(unit_amount),
 					tax_behavior: "inclusive",
-
 				}
+			});
+		} else {
+			// Update existing product
+			const stripeProducts = await stripe.products.search({
+				query: `active:\'true\' AND name:\'${itemName}\'`,
+				limit: 1
+			});
+
+			const product = stripeProducts.data[0];
+			if (!product) {
+				throw new Error(`Product "${itemName}" not found in Stripe`);
+			}
+
+			// Only create new price if amount has changed
+			const currentPrice = product.default_price;
+			let priceId = currentPrice;
+
+			if (currentPrice) {
+				const price = await stripe.prices.retrieve(currentPrice);
+				if (price.unit_amount !== parseInt(unit_amount) || price.currency !== currency.toLowerCase()) {
+					const newPrice = await stripe.prices.create({
+						currency: currency.toLowerCase(),
+						unit_amount: parseInt(unit_amount),
+						product: product.id,
+						tax_behavior: "inclusive",
+					});
+					priceId = newPrice.id;
+				}
+			} else {
+				const newPrice = await stripe.prices.create({
+					currency: currency.toLowerCase(),
+					unit_amount: parseInt(unit_amount),
+					product: product.id,
+					tax_behavior: "inclusive",
+				});
+				priceId = newPrice.id;
+			}
+
+			await stripe.products.update(product.id, {
+				default_price: priceId,
+				description,
+				name: itemName,
+				tax_code,
+				active: available
 			});
 		}
 
 		res.json({
-			status: true
+			status: true,
+			message: create ? 'Product created successfully' : 'Product updated successfully'
 		});
 
 	} catch (error) {
@@ -533,13 +549,14 @@ app.post('/create-update-product', async (req, res) => {
 			stack: error.stack
 		});
 
-		res.status(500).json({
+		const statusCode = error.message.includes('not found') ? 404 : 500;
+
+		res.status(statusCode).json({
 			error: 'Create/Updating Product failed',
 			message: error.message,
 			code: error.code || 'create_update_product_error'
 		});
 	}
-
 });
 
 async function getOrCreateCustomer(anonymousCustomerEmail) {
