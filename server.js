@@ -468,6 +468,7 @@ app.post('/create-update-product', async (req, res) => {
 
 		const {
 			currency = "eur",
+			oldName,
 			itemName,
 			unit_amount,
 			available,
@@ -477,10 +478,19 @@ app.post('/create-update-product', async (req, res) => {
 		} = req.body;
 
 		if (!create) {
-			const stripeProducts = await stripe.products.search({
-				query: `active:\'true\' AND name:\'${itemName}\'`,
-				limit: 1
-			});
+			let stripeProducts;
+			if (oldName == itemName) {
+				stripeProducts = await stripe.products.search({
+					query: `active:\'true\' AND name:\'${itemName}\'`,
+					limit: 1
+				});
+			} else {
+				stripeProducts = await stripe.products.search({
+					query: `active:\'true\' AND name:\'${oldName}\'`,
+					limit: 1
+				});
+			}
+
 
 			const product = stripeProducts.data[0];
 
