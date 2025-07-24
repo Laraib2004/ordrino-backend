@@ -122,6 +122,46 @@ app.post('/capture_payment_intent', async (req, res) => {
 		const anonymousCustomerEmail = 'anonymous_card@yourdomain.com';
 		let customer = await getOrCreateCustomer(anonymousCustomerEmail);
 
+		let invoice;
+
+		invoice = await stripe.invoices.create({
+			customer: customer.id,
+			collection_method: 'send_invoice',
+			days_until_due: 0,
+			auto_advance: false, // Don't attempt collection
+			automatic_tax: { enabled: true }, // This is critical for total VAT
+			description: 'Tap to Pay payment',
+			footer: [
+				`Importi IVA inclusa ai sensi dell'Art. 13 DPR 633/72`,
+				`Beneficiario: ${recipient_code}`,
+				`P.IVA: ${business_vat}`,
+				`${business_name} - ${business_address}, ${business_city} (${province})`
+			].join('\n'),
+			metadata: {
+				payment_intent: payment_intent_id, // Reference
+				payment_collected_via: 'terminal',
+				business_name,
+				business_address,
+				business_city,
+				business_province: province,
+				business_country,
+				business_vat,
+				recipient_code,
+				issue_date,
+				payment_date,
+				payment_type: 'card',
+				customer_name,
+				customer_vat,
+				customer_fiscal_code
+			},
+			custom_fields: [
+				{ name: "Codice SDI", value: recipient_code },
+				{ name: "P.IVA", value: business_vat },
+				{ name: "Data Emissione", value: issue_date },
+				{ name: "Data Pagamento", value: payment_date }
+			]
+		});
+
 
 		// Create invoice items with proper period handling
 		try {
@@ -166,6 +206,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 				await stripe.invoiceItems.create({
 					customer: customer.id,
+					invoice: invoice.id,
 					pricing: {
 						price: prices.data[0].id
 					},
@@ -185,47 +226,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 		}
 
 		// Create and finalize invoice
-		let invoice;
 		try {
-			invoice = await stripe.invoices.create({
-				customer: customer.id,
-				collection_method: 'send_invoice',
-				days_until_due: 0,
-				auto_advance: false, // Don't attempt collection
-				automatic_tax: { enabled: true }, // This is critical for total VAT
-				description: 'Tap to Pay payment',
-				pending_invoice_items_behavior: 'include',
-				footer: [
-					`Importi IVA inclusa ai sensi dell'Art. 13 DPR 633/72`,
-					`Beneficiario: ${recipient_code}`,
-					`P.IVA: ${business_vat}`,
-					`${business_name} - ${business_address}, ${business_city} (${province})`
-				].join('\n'),
-				metadata: {
-					payment_intent: payment_intent_id, // Reference
-					payment_collected_via: 'terminal',
-					business_name,
-					business_address,
-					business_city,
-					business_province: province,
-					business_country,
-					business_vat,
-					recipient_code,
-					issue_date,
-					payment_date,
-					payment_type: 'card',
-					customer_name,
-					customer_vat,
-					customer_fiscal_code
-				},
-				custom_fields: [
-					{ name: "Codice SDI", value: recipient_code },
-					{ name: "P.IVA", value: business_vat },
-					{ name: "Data Emissione", value: issue_date },
-					{ name: "Data Pagamento", value: payment_date }
-				]
-			});
-
 
 			invoice = await stripe.invoices.finalizeInvoice(invoice.id);
 
@@ -322,10 +323,46 @@ app.post('/cash_payment', async (req, res) => {
 			missing_fields: missingFields
 		});
 	}
+	let invoice;
 
 	try {
 		const anonymousCustomerEmail = 'anonymous@yourdomain.com';
 		let customer = await getOrCreateCustomer(anonymousCustomerEmail);
+
+		invoice = await stripe.invoices.create({
+			customer: customer.id,
+			collection_method: 'send_invoice',
+			days_until_due: 0,
+			automatic_tax: { enabled: true }, // Enable automatic tax calculation
+			description: 'Pagamento contanti',
+			footer: [
+				`Importi IVA inclusa ai sensi dell'Art. 13 DPR 633/72`,
+				`Beneficiario: ${recipient_code}`,
+				`P.IVA: ${business_vat}`,
+				`${business_name} - ${business_address}, ${business_city} (${province})`
+			].join('\n'),
+			metadata: {
+				business_name,
+				business_address,
+				business_city,
+				business_province: province,
+				business_country,
+				business_vat,
+				recipient_code,
+				issue_date,
+				payment_date,
+				payment_type: 'cash',
+				customer_name,
+				customer_vat,
+				customer_fiscal_code
+			},
+			custom_fields: [
+				{ name: "Codice SDI", value: recipient_code },
+				{ name: "P.IVA", value: business_vat },
+				{ name: "Data Emissione", value: issue_date },
+				{ name: "Data Pagamento", value: payment_date }
+			]
+		});
 
 		// Create invoice items with proper period handling
 		try {
@@ -370,6 +407,7 @@ app.post('/cash_payment', async (req, res) => {
 
 				await stripe.invoiceItems.create({
 					customer: customer.id,
+					invoice: invoice.id,
 					pricing: {
 						price: prices.data[0].id},
 					quantity: item.quantity,
@@ -388,43 +426,7 @@ app.post('/cash_payment', async (req, res) => {
 		}
 
 		// Create and finalize invoice with automatic tax
-		let invoice;
 		try {
-			invoice = await stripe.invoices.create({
-				customer: customer.id,
-				collection_method: 'send_invoice',
-				days_until_due: 0,
-				automatic_tax: { enabled: true }, // Enable automatic tax calculation
-				description: 'Pagamento contanti',
-				pending_invoice_items_behavior: 'include',
-				footer: [
-					`Importi IVA inclusa ai sensi dell'Art. 13 DPR 633/72`,
-					`Beneficiario: ${recipient_code}`,
-					`P.IVA: ${business_vat}`,
-					`${business_name} - ${business_address}, ${business_city} (${province})`
-				].join('\n'),
-				metadata: {
-					business_name,
-					business_address,
-					business_city,
-					business_province: province,
-					business_country,
-					business_vat,
-					recipient_code,
-					issue_date,
-					payment_date,
-					payment_type: 'cash',
-					customer_name,
-					customer_vat,
-					customer_fiscal_code
-				},
-				custom_fields: [
-					{ name: "Codice SDI", value: recipient_code },
-					{ name: "P.IVA", value: business_vat },
-					{ name: "Data Emissione", value: issue_date },
-					{ name: "Data Pagamento", value: payment_date }
-				]
-			});
 
 			invoice = await stripe.invoices.finalizeInvoice(invoice.id);
 			if (invoice.status !== 'paid') {
