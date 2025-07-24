@@ -481,17 +481,28 @@ app.post('/create-update-product', async (req, res) => {
 
 		if (create) {
 			// Create new product
-			const product = await stripe.products.create({
-				name: itemName,
-				description,
-				tax_code,
-				active: available,
-				default_price_data: {
-					currency: currency.toLowerCase(),
-					unit_amount: parseInt(unit_amount),
-					tax_behavior: "inclusive",
-				}
-			});
+			try {
+
+				const product = await stripe.products.create({
+					name: itemName,
+					description,
+					tax_code,
+					active: available,
+					default_price_data: {
+						currency: currency.toLowerCase(),
+						unit_amount: parseInt(unit_amount),
+						tax_behavior: "inclusive",
+					}
+				});
+				
+			} catch (error) {
+				console.error('Create Product failed:', {
+					message: error.message,
+					stack: error.stack
+				});
+				throw new Error('Create Product failed');
+
+			}
 		} else {
 			// Update existing product
 			const stripeProducts = await stripe.products.search({
