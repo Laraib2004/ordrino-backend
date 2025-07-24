@@ -463,13 +463,9 @@ app.post('/cash_payment', async (req, res) => {
 });
 
 app.post('/create-update-product', async (req, res) => {
-	console.log('[DEBUG] Request received at /create-update-product', {
-		body: req.body,
-		headers: req.headers
-	});
 
 	try {
-		console.log('[DEBUG] Parsing request body...');
+
 		const {
 			currency = "eur",
 			itemName,
@@ -480,71 +476,26 @@ app.post('/create-update-product', async (req, res) => {
 			create
 		} = req.body;
 
-		console.log('[DEBUG] Parsed request body:', {
-			currency,
-			itemName,
-			unit_amount,
-			available,
-			description,
-			tax_code,
-			create
-		});
-
-		if (!itemName) {
-			console.error('[ERROR] Missing required field: itemName');
-			throw new Error('itemName is required');
-		}
-
-		if (!unit_amount) {
-			console.error('[ERROR] Missing required field: unit_amount');
-			throw new Error('unit_amount is required');
-		}
-
 		if (!create) {
-			console.log('[DEBUG] Starting UPDATE product flow');
-			console.log('[DEBUG] Searching for product in Stripe with query:', `active:\'true\' AND name:\'${itemName}\'`);
-
 			const stripeProducts = await stripe.products.search({
 				query: `active:\'true\' AND name:\'${itemName}\'`,
 				limit: 1
 			});
 
-			console.log('[DEBUG] Stripe products search result:', {
-				hasResults: stripeProducts.data.length > 0,
-				productCount: stripeProducts.data.length,
-				firstProduct: stripeProducts.data[0] || null
-			});
-
 			const product = stripeProducts.data[0];
 
 			if (!product) {
-				const errorMsg = `Product "${itemName}" not found in Stripe`;
-				console.error('[ERROR]', errorMsg);
-				throw new Error(errorMsg);
+				throw new Error(`Product "${itemName}" not found in Stripe`);
 			}
 
-			console.log('[DEBUG] Found product:', {
-				id: product.id,
-				name: product.name,
-				default_price: product.default_price,
-				active: product.active
-			});
-
-			console.log('[DEBUG] Creating new price for product...');
 			const price = await stripe.prices.create({
-				currency: currency.toLowerCase(),
-				unit_amount: parseInt(unit_amount),
+				currency,
+				unit_amount: unit_amount,
 				product: product.id,
 				tax_behavior: "inclusive",
+
 			});
 
-			console.log('[DEBUG] New price created:', {
-				priceId: price.id,
-				amount: price.unit_amount,
-				currency: price.currency
-			});
-
-			console.log('[DEBUG] Updating product with new price...');
 			const productUpdate = await stripe.products.update(
 				product.id,
 				{
@@ -556,60 +507,39 @@ app.post('/create-update-product', async (req, res) => {
 				}
 			);
 
-			console.log('[DEBUG] Product update result:', {
-				updatedProductId: productUpdate.id,
-				newDefaultPrice: productUpdate.default_price,
-				newStatus: productUpdate.active
-			});
-
-		} else {
-			console.log('[DEBUG] Starting CREATE product flow');
-			console.log('[DEBUG] Creating new product with price...');
-
+		}
+		else {
 			const product = await stripe.products.create({
 				name: itemName,
 				description,
 				tax_code,
 				active: available,
 				default_price_data: {
-					currency: currency.toLowerCase(),
-					unit_amount: parseInt(unit_amount),
+					currency,
+					unit_amount,
 					tax_behavior: "inclusive",
-				}
-			});
 
-			console.log('[DEBUG] New product created:', {
-				productId: product.id,
-				name: product.name,
-				default_price: product.default_price,
-				active: product.active
+				}
 			});
 		}
 
-		console.log('[DEBUG] Operation completed successfully');
 		res.json({
-			status: true,
-			message: create ? 'Product created successfully' : 'Product updated successfully'
+			status: true
 		});
 
 	} catch (error) {
-		console.error('[ERROR] Create/Updating Product failed:', {
+		console.error('Create/Updating Product failed:', {
 			message: error.message,
-			stack: error.stack,
-			errorType: error.type, // Stripe errors often have a type
-			errorCode: error.code,  // Stripe error code if available
-			rawError: error         // The complete error object
+			stack: error.stack
 		});
 
-		const statusCode = error.message.includes('not found') ? 404 : 500;
-
-		res.status(statusCode).json({
+		res.status(500).json({
 			error: 'Create/Updating Product failed',
 			message: error.message,
-			code: error.code || 'create_update_product_error',
-			type: error.type || 'unknown_error'
+			code: error.code || 'create_update_product_error'
 		});
 	}
+
 });
 
 async function getOrCreateCustomer(anonymousCustomerEmail) {
