@@ -479,7 +479,7 @@ app.post('/create-update-product', async (req, res) => {
 
 		if (!create) {
 			let stripeProducts;
-			if (oldName == itemName) {
+			if (oldName.equals(itemName)) {
 				stripeProducts = await stripe.products.search({
 					query: `active:\'true\' AND name:\'${itemName}\'`,
 					limit: 1
