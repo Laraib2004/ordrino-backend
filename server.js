@@ -189,7 +189,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 		try {
 			invoice = await stripe.invoices.create({
 				customer: customer.id,
-				collection_method: 'send_invoice',
+				collection_method: 'charge_automatically',
 				days_until_due: 0,
 				auto_advance: false, // Don't attempt collection
 				automatic_tax: { enabled: true }, // This is critical for total VAT
