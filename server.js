@@ -471,7 +471,7 @@ app.post('/create-update-product', async (req, res) => {
 			itemName,
 			unit_amount,
 			available,
-			description,
+			description = "",
 			tax_code,
 			create,
 			prod_id
