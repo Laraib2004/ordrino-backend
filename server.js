@@ -328,6 +328,8 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 app.post('/cash_payment', async (req, res) => {
 	const {
+		tip_amount_cents = 0,
+		subtotal_amount_cents = 0,
 		items = [],
 		currency = 'eur',
 		// Business Information
@@ -383,6 +385,18 @@ app.post('/cash_payment', async (req, res) => {
 	let invoice;
 
 	try {
+
+		const expected_total = subtotal_amount_cents + tip_amount_cents;
+		const captured_total = paymentIntent.amount_received;
+
+		if (captured_total !== expected_total) {
+			// Log the mismatch but proceed or, ideally, throw an error
+			// since this is a serious mismatch.
+			console.error(`ERROR: Captured amount (${captured_total}) does not match expected total (${expected_total}).`);
+			// You might want to throw an error here to prevent a fraudulent receipt.
+			// throw new Error('Payment total mismatch. Aborting invoice creation.');
+		}
+
 		const anonymousCustomerEmail = 'anonymous@yourdomain.com';
 		let customer = await getOrCreateCustomer(anonymousCustomerEmail);
 
@@ -423,6 +437,9 @@ app.post('/cash_payment', async (req, res) => {
 
 		// Create invoice items with proper period handling
 		try {
+			// Parse service date safely
+			let serviceTimestamp;
+			
 			for (const item of items) {
 				// Search for matching Stripe product
 				const stripeProducts = await stripe.products.search({
@@ -444,8 +461,6 @@ app.post('/cash_payment', async (req, res) => {
 					throw new Error(`No price found for product "${item.name}"`);
 				}
 
-				// Parse service date safely
-				let serviceTimestamp;
 				try {
 					const dateString = item.service_date || service_date;
 					const [datePart, timePart] = dateString.split(' ');
@@ -475,6 +490,48 @@ app.post('/cash_payment', async (req, res) => {
 					metadata: {
 						service_date: item.service_date || service_date
 					}
+				});
+			}
+
+			if (tip_amount_cents > 0) {
+				console.log(`Adding tip of ${tip_amount_cents} cents to invoice.`);
+
+				const TIP_PRODUCT_NAME = "Tip"; // NOTE: This MUST match your Stripe Product name
+
+				// 1. Find Tip Product
+				const tipProducts = await stripe.products.search({
+					query: `active:\'true\' AND name:\'${TIP_PRODUCT_NAME}\'`,
+					limit: 1
+				});
+
+				if (!tipProducts.data[0]) {
+					throw new Error(`Tip Product "${TIP_PRODUCT_NAME}" not found in Stripe. Please create it.`);
+				}
+
+				// 2. Create Ad-hoc Price for the specific tip amount
+				// Since the tip amount is variable, we create a one-time price for it.
+				const tipPrice = await stripe.prices.create({
+					unit_amount: tip_amount_cents, // Use the amount received from the client
+					currency: currency,
+					product: tipProducts.data[0].id,
+					billing_scheme: 'per_unit',
+					tax_behavior: 'unspecified', // Tips are usually non-taxable
+				});
+
+				// 3. Add Tip Invoice Item
+				await stripe.invoiceItems.create({
+					customer: customer.id,
+					invoice: invoice.id,
+					pricing: {
+						price: tipPrice.id
+					},
+					quantity: 1, // Always 1 unit of tip
+					// Use the same period as the rest of the items or current time
+					period: {
+						start: serviceTimestamp, // Use the existing serviceTimestamp variable
+						end: serviceTimestamp
+					},
+					description: 'Mancia/Tip'
 				});
 			}
 		} catch (error) {
