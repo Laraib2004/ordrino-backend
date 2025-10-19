@@ -61,6 +61,8 @@ app.post('/create_payment_intent', async (req, res) => {
 // --- Example endpoint for capturing a Payment Intent (as discussed previously) ---
 app.post('/capture_payment_intent', async (req, res) => {
 	const { payment_intent_id, items = [], currency = 'eur',
+		tip_amount_cents = 0,
+		subtotal_amount_cents = 0,
 		// Business Information
 		business_address,
 		business_city,
@@ -119,6 +121,17 @@ app.post('/capture_payment_intent', async (req, res) => {
 	try {
 		const paymentIntent = await stripe.paymentIntents.capture(payment_intent_id);
 
+		const expected_total = subtotal_amount_cents + tip_amount_cents;
+		const captured_total = paymentIntent.amount_received;
+
+		if (captured_total !== expected_total) {
+			// Log the mismatch but proceed or, ideally, throw an error
+			// since this is a serious mismatch.
+			console.error(`ERROR: Captured amount (${captured_total}) does not match expected total (${expected_total}).`);
+			// You might want to throw an error here to prevent a fraudulent receipt.
+			// throw new Error('Payment total mismatch. Aborting invoice creation.');
+		}
+
 		const anonymousCustomerEmail = 'anonymous_card@yourdomain.com';
 		let customer = await getOrCreateCustomer(anonymousCustomerEmail);
 
@@ -152,7 +165,8 @@ app.post('/capture_payment_intent', async (req, res) => {
 				payment_type: 'card',
 				customer_name,
 				customer_vat,
-				customer_fiscal_code
+				customer_fiscal_code,
+				tip_amount_cents
 			},
 			custom_fields: [
 				{ name: "Codice SDI", value: recipient_code },
@@ -218,6 +232,48 @@ app.post('/capture_payment_intent', async (req, res) => {
 					metadata: {
 						service_date: item.service_date || service_date
 					}
+				});
+			}
+
+			if (tip_amount_cents > 0) {
+				console.log(`Adding tip of ${tip_amount_cents} cents to invoice.`);
+
+				const TIP_PRODUCT_NAME = "Tip"; // NOTE: This MUST match your Stripe Product name
+
+				// 1. Find Tip Product
+				const tipProducts = await stripe.products.search({
+					query: `active:\'true\' AND name:\'${TIP_PRODUCT_NAME}\'`,
+					limit: 1
+				});
+
+				if (!tipProducts.data[0]) {
+					throw new Error(`Tip Product "${TIP_PRODUCT_NAME}" not found in Stripe. Please create it.`);
+				}
+
+				// 2. Create Ad-hoc Price for the specific tip amount
+				// Since the tip amount is variable, we create a one-time price for it.
+				const tipPrice = await stripe.prices.create({
+					unit_amount: tip_amount_cents, // Use the amount received from the client
+					currency: currency,
+					product: tipProducts.data[0].id,
+					billing_scheme: 'per_unit',
+					tax_behavior: 'none', // Tips are usually non-taxable
+				});
+
+				// 3. Add Tip Invoice Item
+				await stripe.invoiceItems.create({
+					customer: customer.id,
+					invoice: invoice.id,
+					pricing: {
+						price: tipPrice.id
+					},
+					quantity: 1, // Always 1 unit of tip
+					// Use the same period as the rest of the items or current time
+					period: {
+						start: serviceTimestamp, // Use the existing serviceTimestamp variable
+						end: serviceTimestamp
+					},
+					description: 'Mancia/Tip'
 				});
 			}
 		} catch (error) {
