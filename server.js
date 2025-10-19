@@ -179,6 +179,8 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 		// Create invoice items with proper period handling
 		try {
+			// Parse service date safely
+			let serviceTimestamp;
 			for (const item of items) {
 				// Search for matching Stripe product
 				const stripeProducts = await stripe.products.search({
@@ -200,8 +202,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 					throw new Error(`No price found for product "${item.name}"`);
 				}
 
-				// Parse service date safely
-				let serviceTimestamp;
+
 				try {
 					const dateString = item.service_date || service_date;
 					const [datePart, timePart] = dateString.split(' ');
