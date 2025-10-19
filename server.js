@@ -257,7 +257,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 					currency: currency,
 					product: tipProducts.data[0].id,
 					billing_scheme: 'per_unit',
-					tax_behavior: 'none', // Tips are usually non-taxable
+					tax_behavior: 'unspecified', // Tips are usually non-taxable
 				});
 
 				// 3. Add Tip Invoice Item
