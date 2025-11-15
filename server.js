@@ -7,10 +7,80 @@ const cors = require('cors'); // For handling Cross-Origin Resource Sharing (use
 
 const app = express();
 const PORT = process.env.PORT || 3000; // Use port from environment variable or default to 3000
+const OPENAPI_URL_TEST = "https://test.invoice.openapi.com/IT-receipts";
+const axios = require("axios");
+const receiptWaiters = new Map();
 
 // Middleware
 app.use(cors()); // Enable CORS for all routes (adjust for production security)
 app.use(express.json()); // To parse JSON request bodies
+
+
+function waitForReceipt(receiptId) {
+	return new Promise((resolve, reject) => {
+		receiptWaiters.set(receiptId, { resolve, reject });
+
+		// Timeout after 15 seconds
+		setTimeout(() => {
+			if (receiptWaiters.has(receiptId)) {
+				receiptWaiters.get(receiptId).reject(new Error("Timeout waiting for OpenAPI receipt"));
+				receiptWaiters.delete(receiptId);
+			}
+		}, 15000);
+	});
+}
+
+async function sendFiscalReceipt({ total, items, vat, paymentType }) {
+	const payload = {
+		amount: total,
+		items,
+		vat,
+		payment: paymentType
+	};
+
+	const response = await axios.post(
+		OPENAPI_URL_TEST,
+		payload,
+		{
+			headers: {
+				"content-type": "application/json",
+				Authorization: `Bearer ${process.env.OPENAPI_TOKEN_TEST}`
+			}
+		}
+	);
+
+	return response.data.data.id; // << important: return the receipt ID
+}
+
+
+// --- Openapi Receipt Callback (SUCCESS) ---
+app.post('/openapi/receipt', (req, res) => {
+	console.log("📥 Fiscal receipt SUCCESS:", req.body);
+
+	const receiptId = req.body.id;
+
+	if (receiptWaiters.has(receiptId)) {
+		receiptWaiters.get(receiptId).resolve(req.body);
+		receiptWaiters.delete(receiptId);
+	}
+
+	res.sendStatus(200);
+});
+
+// --- Openapi Receipt Callback (ERROR) ---
+app.post('/openapi/receipt-error', (req, res) => {
+	console.error("❌ Fiscal receipt ERROR:", req.body);
+
+	const receiptId = req.body.id;
+
+	if (receiptWaiters.has(receiptId)) {
+		receiptWaiters.get(receiptId).reject(new Error(req.body.message || "Fiscal error"));
+		receiptWaiters.delete(receiptId);
+	}
+
+	res.sendStatus(200);
+});
+
 
 // --- Endpoint for ConnectionToken ---
 app.post('/connection_token', async (req, res) => {
@@ -303,13 +373,53 @@ app.post('/capture_payment_intent', async (req, res) => {
 				}
 			});
 
+			// 1. send to OpenAPI → get receiptId
+			const receiptId = await sendFiscalReceipt({
+				total: captured_total,
+				items,
+				vat: 22, // TODO change this
+				paymentType: "CARD"
+			});
+
+			console.log("OpenAPI accepted receipt, id:", receiptId);
+
+			// 2. Wait for callback to arrive
+			let finalReceipt;
+			try {
+				finalReceipt = await waitForReceipt(receiptId);
+			} catch (err) {
+				console.error('Invoice creation error:', {
+					message: error.message,
+					stack: error.stack
+				});
+				return res.status(500).json({
+					success: false,
+					message: "Fiscal system timeout",
+					error: err.message
+				});
+			}
+
+			// 3. finalReceipt contains:
+			// { id, status, protocol, qr, fiscal_code, amount, timestamp }
+
+			// THIS response is NOT the AdE final result.
+			// The final result arrives via callback!
+			console.log("Openapi accepted receipt:", fiscalResponse.data);
 			res.json({
 				status: paymentIntent.status,
 				success: true,
 				invoice_id: invoice.id,
-				hosted_invoice_url: invoice.hosted_invoice_url,
+				hosted_invoice_url: finalReceipt.qr,
 				invoice_pdf: invoice.invoice_pdf,
+				fiscal_receipt: {
+					id: finalReceipt.id,
+					qr: finalReceipt.qr,
+					protocol: finalReceipt.protocol,
+					status: finalReceipt.status,
+					amount: finalReceipt.amount
+				}
 			});
+
 
 		} catch (error) {
 			console.error('Invoice processing failed:', error);
@@ -556,11 +666,48 @@ app.post('/cash_payment', async (req, res) => {
 				});
 			}
 
+			// 1. send to OpenAPI → get receiptId
+			const receiptId = await sendFiscalReceipt({
+				total: captured_total,
+				items,
+				vat: 22, // TODO change this
+				paymentType: "CASH"
+			});
+
+			console.log("OpenAPI accepted receipt, id:", receiptId);
+
+			// 2. Wait for callback to arrive
+			let finalReceipt;
+			try {
+				finalReceipt = await waitForReceipt(receiptId);
+			} catch (err) {
+				console.error('Invoice creation error:', {
+					message: error.message,
+					stack: error.stack
+				});
+				return res.status(500).json({
+					success: false,
+					message: "Fiscal system timeout",
+					error: err.message
+				});
+			}
+
+			// 3. finalReceipt contains:
+			// { id, status, protocol, qr, fiscal_code, amount, timestamp }
+
+
 			res.json({
 				success: true,
 				invoice_id: invoice.id,
-				hosted_invoice_url: invoice.hosted_invoice_url,
-				invoice_pdf: invoice.invoice_pdf
+				hosted_invoice_url: finalReceipt.qr,
+				invoice_pdf: invoice.invoice_pdf,
+				fiscal_receipt: {
+					id: finalReceipt.id,
+					qr: finalReceipt.qr,
+					protocol: finalReceipt.protocol,
+					status: finalReceipt.status,
+					amount: finalReceipt.amount
+				}
 			});
 
 		} catch (error) {
