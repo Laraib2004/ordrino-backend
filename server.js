@@ -668,7 +668,7 @@ app.post('/cash_payment', async (req, res) => {
 
 			// 1. send to OpenAPI → get receiptId
 			const receiptId = await sendFiscalReceipt({
-				total: captured_total,
+				total: subtotal_amount_cents/100,
 				items,
 				vat: 22, // TODO change this
 				paymentType: "CASH"
