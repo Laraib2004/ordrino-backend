@@ -30,34 +30,42 @@ function waitForReceipt(receiptId) {
 	});
 }
 
-async function sendFiscalReceipt({ total, items, paymentType }) {
+async function sendFiscalReceipt({
+	items,
+	paymentBreakdown, // { cash: 0, card: 0, ticketRestaurant: 0, ticketQuantity: 0 }
+	invoiceIssuing = false,
+	linkedReceipt = null,
+	discount = 0,
+	lotteryCode = null,
+	tags = []
+}) {
 	const payload = {
 		fiscal_id: process.env.OPENAPI_FISCAL_ID,
 		items: items.map(i => ({
 			quantity: i.quantity,
 			description: i.name,
-			unit_price: i.unit_price,  // MUST be in EURO, not cents
-			vat_rate_code: i.vat_rate_code, // e.g. "22", "10", "4"
+			unit_price: i.unit_price/100, // must be in euros (e.g., 4.50)
+			vat_rate_code: i.vat_rate_code || "10", // default to 10% if not provided
 			discount: i.discount || 0,
 			complimentary: false,
 			sku: i.sku || ""
 		})),
-		invoice_issuing: false,
+		invoice_issuing: invoiceIssuing,
 
-		// payment breakdown (OpenAPI requires these fields)
-		cash_payment_amount: paymentType === "CASH" ? total : 0,
-		electronic_payment_amount: paymentType === "CARD" ? total : 0,
+		// payment breakdown
+		cash_payment_amount: paymentBreakdown.cash || 0,
+		electronic_payment_amount: paymentBreakdown.card || 0,
+		ticket_restaurant_payment_amount: paymentBreakdown.ticketRestaurant || 0,
+		ticket_restaurant_quantity: paymentBreakdown.ticketQuantity || 0,
 
-		// required filler fields
-		services_uncollected_amount: 0,
-		goods_uncollected_amount: 0,
-		ticket_restaurant_payment_amount: 0,
-		ticket_restaurant_quantity: 0,
-		discount: 0,
+		// uncollected / filler amounts
+		goods_uncollected_amount: paymentBreakdown.goodsUncollected || 0,
+		services_uncollected_amount: paymentBreakdown.servicesUncollected || 0,
+		discount: discount,
 
-		lottery_code: null,
-		linked_receipt: null,
-		tags: []
+		linked_receipt: linkedReceipt,
+		lottery_code: lotteryCode,
+		tags: tags
 	};
 
 	const response = await axios.post(
@@ -73,6 +81,7 @@ async function sendFiscalReceipt({ total, items, paymentType }) {
 
 	return response.data.data.id;
 }
+
 
 
 // --- Openapi Receipt Callback (SUCCESS) ---
@@ -397,9 +406,14 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 			// 1. send to OpenAPI → get receiptId
 			const receiptId = await sendFiscalReceipt({
-				total: captured_total/100,
 				items,
-				paymentType: "CARD"
+				paymentBreakdown:
+				{
+					cash: 0,
+					card: captured_total / 100,
+					ticketRestaurant: 0,
+					ticketQuantity: 0
+				}
 			});
 
 			console.log("OpenAPI accepted receipt, id:", receiptId);
@@ -689,9 +703,14 @@ app.post('/cash_payment', async (req, res) => {
 
 			// 1. send to OpenAPI → get receiptId
 			const receiptId = await sendFiscalReceipt({
-				total: (subtotal_amount_cents+tip_amount_cents)/100,
 				items,
-				paymentType: "CASH"
+				paymentBreakdown:
+				{
+					cash: (subtotal_amount_cents + tip_amount_cents) / 100,
+					card: 0,
+					ticketRestaurant: 0,
+					ticketQuantity: 0
+				}
 			});
 
 			console.log("OpenAPI accepted receipt, id:", receiptId);
