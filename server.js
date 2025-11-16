@@ -410,7 +410,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 				paymentBreakdown:
 				{
 					cash: 0,
-					card: captured_total / 100,
+					card: parseFloat(captured_total / 100),
 					ticketRestaurant: 0,
 					ticketQuantity: 0
 				}
@@ -706,7 +706,7 @@ app.post('/cash_payment', async (req, res) => {
 				items,
 				paymentBreakdown:
 				{
-					cash: (subtotal_amount_cents + tip_amount_cents) / 100,
+					cash: parseFloat((subtotal_amount_cents + tip_amount_cents) / 100),
 					card: 0,
 					ticketRestaurant: 0,
 					ticketQuantity: 0
