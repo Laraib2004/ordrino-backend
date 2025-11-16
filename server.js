@@ -30,26 +30,48 @@ function waitForReceipt(receiptId) {
 	});
 }
 
-async function sendFiscalReceipt({ total, items, vat, paymentType }) {
+async function sendFiscalReceipt({ total, items, paymentType }) {
 	const payload = {
-		amount: total,
-		items,
-		vat,
-		payment: paymentType
+		fiscal_id: process.env.OPENAPI_FISCAL_ID,
+		items: items.map(i => ({
+			quantity: i.quantity,
+			description: i.name,
+			unit_price: i.unit_price,  // MUST be in EURO, not cents
+			vat_rate_code: i.vat_rate_code, // e.g. "22", "10", "4"
+			discount: i.discount || 0,
+			complimentary: false,
+			sku: i.sku || ""
+		})),
+		invoice_issuing: false,
+
+		// payment breakdown (OpenAPI requires these fields)
+		cash_payment_amount: paymentType === "CASH" ? total : 0,
+		electronic_payment_amount: paymentType === "CARD" ? total : 0,
+
+		// required filler fields
+		services_uncollected_amount: 0,
+		goods_uncollected_amount: 0,
+		ticket_restaurant_payment_amount: 0,
+		ticket_restaurant_quantity: 0,
+		discount: 0,
+
+		lottery_code: null,
+		linked_receipt: null,
+		tags: []
 	};
 
 	const response = await axios.post(
-		OPENAPI_URL_TEST,
+		"https://test.invoice.openapi.com/IT-receipts",
 		payload,
 		{
 			headers: {
-				"content-type": "application/json",
+				"Content-Type": "application/json",
 				Authorization: `Bearer ${process.env.OPENAPI_TOKEN_TEST}`
 			}
 		}
 	);
 
-	return response.data.data.id; // << important: return the receipt ID
+	return response.data.data.id;
 }
 
 
@@ -375,9 +397,8 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 			// 1. send to OpenAPI → get receiptId
 			const receiptId = await sendFiscalReceipt({
-				total: captured_total,
+				total: captured_total/100,
 				items,
-				vat: 22, // TODO change this
 				paymentType: "CARD"
 			});
 
@@ -668,9 +689,8 @@ app.post('/cash_payment', async (req, res) => {
 
 			// 1. send to OpenAPI → get receiptId
 			const receiptId = await sendFiscalReceipt({
-				total: subtotal_amount_cents/100,
+				total: (subtotal_amount_cents+tip_amount_cents)/100,
 				items,
-				vat: 22, // TODO change this
 				paymentType: "CASH"
 			});
 
