@@ -66,7 +66,7 @@ async function sendFiscalReceipt({ total, items, paymentType }) {
 		{
 			headers: {
 				"Content-Type": "application/json",
-				Authorization: `Bearer ${process.env.OPENAPI_TOKEN_TEST}`
+				Authorization: `Bearer ${process.env.OPENAPI_TOKEN_INVOICE_SANDBOX}`
 			}
 		}
 	);
