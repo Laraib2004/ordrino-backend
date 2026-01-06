@@ -45,7 +45,7 @@ async function sendFiscalReceipt({
 	try {
 		console.log("🔍 Fetching available Fiscal Configurations...");
 		const configResponse = await axios.get(
-			"https://test.invoice.openapi.com/IT-receipts/configurations",
+			"https://test.invoice.openapi.com/IT-configurations",
 			{
 				headers: {
 					Authorization: `Bearer ${process.env.OPENAPI_TOKEN_INVOICE_SANDBOX}`,
