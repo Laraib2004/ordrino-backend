@@ -39,47 +39,87 @@ async function sendFiscalReceipt({
 	lotteryCode = null,
 	tags = []
 }) {
+	let fiscalId = process.env.OPENAPI_FISCAL_ID;
+
+	// 1. Dynamic Fetch: Get the first available configuration
+	try {
+		console.log("🔍 Fetching available Fiscal Configurations...");
+		const configResponse = await axios.get(
+			"https://test.invoice.openapi.com/IT-receipts/configurations",
+			{
+				headers: {
+					Authorization: `Bearer ${process.env.OPENAPI_TOKEN_INVOICE_SANDBOX}`,
+					"Content-Type": "application/json"
+				}
+			}
+		);
+
+		if (configResponse.data && Array.isArray(configResponse.data.data) && configResponse.data.data.length > 0) {
+			// Take the first one found
+			fiscalId = configResponse.data.data[0].fiscal_id;
+			console.log(`✅ Found Fiscal ID: ${fiscalId}`);
+		} else {
+			console.error("⚠️ No configurations found. Falling back to ENV or failing.");
+		}
+	} catch (error) {
+		console.error("⚠️ Failed to fetch configurations dynamically:", error.message);
+		// We continue, hoping the ENV variable is set as fallback
+	}
+
+	if (!fiscalId) {
+		throw new Error("No Fiscal ID found (checked API and ENV). Please configure a cashier in OpenAPI.");
+	}
+
+	// 2. Construct Payload
 	const payload = {
-		fiscal_id: process.env.OPENAPI_FISCAL_ID,
+		fiscal_id: fiscalId,
 		items: items.map(i => ({
 			quantity: i.quantity,
-			description: i.name,
-			unit_price: i.unit_price/100, // must be in euros (e.g., 4.50)
-			vat_rate_code: i.vat_rate_code || "10", // default to 10% if not provided
+			description: i.name || i.description || "Item",
+			unit_price: i.unit_price / 100, // must be in euros
+			vat_rate_code: i.vat_rate_code || "10",
 			discount: i.discount || 0,
 			complimentary: false,
 			sku: i.sku || ""
 		})),
 		invoice_issuing: invoiceIssuing,
-
-		// payment breakdown
 		cash_payment_amount: paymentBreakdown.cash || 0,
 		electronic_payment_amount: paymentBreakdown.card || 0,
 		ticket_restaurant_payment_amount: paymentBreakdown.ticketRestaurant || 0,
 		ticket_restaurant_quantity: paymentBreakdown.ticketQuantity || 0,
-
-		// uncollected / filler amounts
 		goods_uncollected_amount: paymentBreakdown.goodsUncollected || 0,
 		services_uncollected_amount: paymentBreakdown.servicesUncollected || 0,
 		discount: discount,
-
 		linked_receipt: linkedReceipt,
 		lottery_code: lotteryCode,
 		tags: tags
 	};
 
-	const response = await axios.post(
-		"https://test.invoice.openapi.com/IT-receipts",
-		payload,
-		{
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${process.env.OPENAPI_TOKEN_INVOICE_SANDBOX}`
-			}
-		}
-	);
+	// 3. Send Receipt
+	try {
+		console.log(`📤 Sending to OpenAPI (Fiscal ID: ${fiscalId})...`);
 
-	return response.data.data.id;
+		const response = await axios.post(
+			"https://test.invoice.openapi.com/IT-receipts",
+			payload,
+			{
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${process.env.OPENAPI_TOKEN_INVOICE_SANDBOX}`
+				}
+			}
+		);
+
+		return response.data.data.id;
+
+	} catch (error) {
+		// Detailed Error Logging
+		if (error.response) {
+			console.error("❌ OpenAPI Error Response:", JSON.stringify(error.response.data, null, 2));
+			throw new Error(`OpenAPI Error: ${error.response.data.message || error.response.statusText}`);
+		}
+		throw error;
+	}
 }
 
 
