@@ -143,6 +143,8 @@ async function sendFiscalReceipt({
 			console.log(`✅ Found Fiscal ID: ${fiscalId}`);
 		} else {
 			console.error("⚠️ No configurations found. Falling back to ENV or failing.");
+			createTestCompany();
+			fiscalId = TEST_TAX_CODE;
 		}
 	} catch (error) {
 		console.error("⚠️ Failed to fetch configurations dynamically:", error.message);
