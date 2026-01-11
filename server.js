@@ -15,6 +15,89 @@ const receiptWaiters = new Map();
 app.use(cors()); // Enable CORS for all routes (adjust for production security)
 app.use(express.json()); // To parse JSON request bodies
 
+// 1. SETTINGS
+// Replace with your actual API Token
+const API_TOKEN = "695d2bbb14d236be330356f4";
+// Replace with the actual endpoint (check your specific provider's docs, likely something like this)
+const API_URL = "https://api.openapi.it/v1/it-configuration"; // EXAMPLE URL - VERIFY THIS
+
+// 2. GENERATE VALID DUMMY DATA
+// Using a generic valid 11-digit P.IVA format (00000000000 is often accepted as test, or use a generator)
+const TEST_VAT_NUMBER = "12345678903";
+
+// Using a standard valid fake Codice Fiscale (Mario Rossi) for the auth representative
+const TEST_TAX_CODE = "RSSMRA80A01H501U";
+
+// 3. CONSTRUCT THE PAYLOAD
+const companyData = {
+	// fiscal_id: The VAT number of your "fake" company
+	fiscal_id: TEST_VAT_NUMBER,
+	name: "TEST COMPANY SRL",
+	email: "dev-test@example.com",
+
+	// REQUIRED: Enable receipts
+	receipts: true,
+
+	// REQUIRED: Authentication for the "Cloud RT"
+	// Since you are in test mode, you can put placeholder credentials here.
+	receipts_authentication: {
+		taxCode: TEST_TAX_CODE,  // Legal Representative's CF
+		password: "TestPassword123!", // Dummy password
+		pin: "12345"                  // Dummy PIN
+	},
+
+	// REQUIRED: Callbacks (as per your instructions)
+	api_configurations: [
+		{
+			event: "receipt",
+			callback: {
+				url: "https://ordrino-backend.onrender.com/openapi/receipt"
+			}
+		},
+		{
+			event: "receipt-error",
+			callback: {
+				url: "https://ordrino-backend.onrender.com/openapi/receipt-error"
+			}
+		}
+	]
+};
+
+async function createTestCompany() {
+	try {
+		console.log("Creating Test Company Configuration...");
+
+		const response = await fetch(API_URL, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"Authorization": `Bearer ${API_TOKEN}` // If authentication is required
+			},
+			body: JSON.stringify(companyData)
+		});
+
+		const result = await response.json();
+
+		// 5. HANDLE RESPONSE
+		if (response.ok) {
+			console.log("✅ SUCCESS: Company Created!");
+			console.log("Company ID:", result.data.id);
+			console.log("Fiscal ID:", result.data.fiscal_id);
+		} else {
+			console.error("❌ ERROR:", response.status);
+			console.error("Message:", result.message || result);
+
+			// Handle the specific error mentioned in your prompt (404/409)
+			if (result.error === 111) {
+				console.error("Details: Fiscal ID issue. Try a different VAT number.");
+			}
+		}
+
+	} catch (error) {
+		console.error("❌ NETWORK ERROR:", error.message);
+	}
+}
+
 
 function waitForReceipt(receiptId) {
 	return new Promise((resolve, reject) => {
@@ -64,6 +147,8 @@ async function sendFiscalReceipt({
 	} catch (error) {
 		console.error("⚠️ Failed to fetch configurations dynamically:", error.message);
 		// We continue, hoping the ENV variable is set as fallback
+		createTestCompany();
+		fiscalId = TEST_TAX_CODE;
 	}
 
 	if (!fiscalId) {
