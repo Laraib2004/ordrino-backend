@@ -19,7 +19,7 @@ app.use(express.json()); // To parse JSON request bodies
 // Replace with your actual API Token
 const API_TOKEN = "695d2bbb14d236be330356f4";
 // Replace with the actual endpoint (check your specific provider's docs, likely something like this)
-const API_URL = "https://api.openapi.it/v1/it-configuration"; // EXAMPLE URL - VERIFY THIS
+const API_URL = "https://test.invoice.openapi.com/IT-configurations";
 
 // 2. GENERATE VALID DUMMY DATA
 // Using a generic valid 11-digit P.IVA format (00000000000 is often accepted as test, or use a generator)
