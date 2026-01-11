@@ -23,42 +23,36 @@ const API_URL = "https://test.invoice.openapi.com/IT-configurations";
 
 // 2. GENERATE VALID DUMMY DATA
 // Using a generic valid 11-digit P.IVA format (00000000000 is often accepted as test, or use a generator)
-const TEST_VAT_NUMBER = "12345678903";
+const TEST_VAT_NUMBER = "12485671007";
 
 // Using a standard valid fake Codice Fiscale (Mario Rossi) for the auth representative
 const TEST_TAX_CODE = "RSSMRA80A01H501U";
 
 // 3. CONSTRUCT THE PAYLOAD
 const companyData = {
-	// fiscal_id: The VAT number of your "fake" company
+	// CORRECTED: Use a valid 11-digit VAT number for testing
+	// '12485671007' is a real valid P.IVA (OpenAPI S.r.l.) often used for sandbox validation
 	fiscal_id: TEST_VAT_NUMBER,
+
 	name: "TEST COMPANY SRL",
 	email: "dev-test@example.com",
-
-	// REQUIRED: Enable receipts
 	receipts: true,
 
-	// REQUIRED: Authentication for the "Cloud RT"
-	// Since you are in test mode, you can put placeholder credentials here.
+	// This part was fine, stick with the personal tax code here for the "Auth Representative"
 	receipts_authentication: {
-		taxCode: TEST_TAX_CODE,  // Legal Representative's CF
-		password: "TestPassword123!", // Dummy password
-		pin: "12345"                  // Dummy PIN
+		taxCode: TEST_TAX_CODE,
+		password: "TestPassword123!",
+		pin: "12345"
 	},
 
-	// REQUIRED: Callbacks (as per your instructions)
 	api_configurations: [
 		{
 			event: "receipt",
-			callback: {
-				url: "https://ordrino-backend.onrender.com/openapi/receipt"
-			}
+			callback: { url: "https://ordrino-backend.onrender.com/openapi/receipt" }
 		},
 		{
 			event: "receipt-error",
-			callback: {
-				url: "https://ordrino-backend.onrender.com/openapi/receipt-error"
-			}
+			callback: { url: "https://ordrino-backend.onrender.com/openapi/receipt-error" }
 		}
 	]
 };
