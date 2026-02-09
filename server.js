@@ -69,8 +69,9 @@ async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transac
 	try {
 		// A. GET VALID TOKEN
 		const authToken = await getAcubeToken();
+		const acubeUrl = process.env.ACUBE_API_URL || 'https://api-sandbox.acubeapi.com';
 
-		// B. Prepare Items (Same as before)
+		// B. Prepare Items
 		const fiscalItems = items.map(item => ({
 			description: item.name || item.description || "Articolo",
 			quantity: item.quantity,
@@ -101,11 +102,7 @@ async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transac
 			payload.cash_payment_amount = totalAmount;
 		}
 
-		// C. Send Request (Using dynamic token)
-		// Note: Fiscal APIs might have a different base URL than the Login API.
-		// Usually: https://api-sandbox.acubeapi.com/receipts
-		const acubeUrl = process.env.ACUBE_API_URL || 'https://api-sandbox.acubeapi.com';
-
+		// C. Send Creation Request
 		const createRes = await axios.post(`${acubeUrl}/receipts`, payload, {
 			headers: {
 				'Authorization': `Bearer ${authToken}`,
@@ -116,12 +113,15 @@ async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transac
 		const uuid = createRes.data.uuid;
 		console.log(`Fiscal Receipt Queued. UUID: ${uuid}`);
 
-		// D. POLLING LOOP (Using dynamic token)
+		// D. POLLING LOOP
 		let fiscalDoc = null;
-		for (let i = 0; i < 10; i++) {
+		let pdfBase64 = null;
+
+		for (let i = 0; i < 15; i++) { // Increased attempts slightly
 			await new Promise(resolve => setTimeout(resolve, 1000));
 
 			try {
+				// 1. Check Status (JSON)
 				const checkRes = await axios.get(`${acubeUrl}/receipts/${uuid}/details`, {
 					headers: {
 						'Authorization': `Bearer ${authToken}`,
@@ -131,10 +131,24 @@ async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transac
 
 				if (checkRes.data.status === 'ready' && checkRes.data.document_number) {
 					fiscalDoc = checkRes.data;
-					break;
+
+					// 2. FETCH PDF CONTENT (The New Step)
+					console.log("Receipt ready. Fetching PDF...");
+					const pdfRes = await axios.get(`${acubeUrl}/receipts/${uuid}/details`, {
+						headers: {
+							'Authorization': `Bearer ${authToken}`,
+							'Accept': 'application/pdf' // <--- REQUEST PDF
+						},
+						responseType: 'arraybuffer' // <--- CRITICAL: Get raw binary data
+					});
+
+					// 3. Convert Binary PDF to Base64 String
+					pdfBase64 = Buffer.from(pdfRes.data, 'binary').toString('base64');
+
+					break; // Exit loop
 				}
 			} catch (e) {
-				// Ignore transient errors
+				console.log("Waiting for fiscalization...");
 			}
 		}
 
@@ -143,7 +157,8 @@ async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transac
 			status: fiscalDoc ? 'completed' : 'pending',
 			uuid: uuid,
 			document_number: fiscalDoc?.document_number || null,
-			pdf_url: `${acubeUrl}/receipts/${uuid}/pdf`
+			// Send the actual file content, not a link
+			pdf_base64: pdfBase64
 		};
 
 	} catch (error) {
@@ -559,7 +574,7 @@ app.post('/cash_payment', async (req, res) => {
 			success: true,
 			invoice_id: invoice.id,
 			hosted_invoice_url: fiscalResult.pdf_url,
-			invoice_pdf: invoice.invoice_pdf,
+			invoice_pdf: fiscal.pdfBase64,
 			fiscal_receipt: fiscalResult // Contains the Document Number & PDF URL
 		});
 
