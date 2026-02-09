@@ -486,7 +486,9 @@ app.post('/cash_payment', async (req, res) => {
 	}
 
 	// DECRYPT the key on the fly
+	console.log("trying decripting");
 	const decryptedStripeKey = decrypt(config.stripe_secret_key);
+	console.log("decripting finished");
 
 	// Initialize a LOCAL Stripe instance for this specific request
 	// This ensures we use THIS restaurant's account, not the platform's.
