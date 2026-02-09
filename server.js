@@ -7,232 +7,10 @@ const cors = require('cors'); // For handling Cross-Origin Resource Sharing (use
 
 const app = express();
 const PORT = process.env.PORT || 3000; // Use port from environment variable or default to 3000
-const OPENAPI_URL_TEST = "https://test.invoice.openapi.com/IT-receipts";
-const axios = require("axios");
-const receiptWaiters = new Map();
 
 // Middleware
 app.use(cors()); // Enable CORS for all routes (adjust for production security)
 app.use(express.json()); // To parse JSON request bodies
-
-// 1. SETTINGS
-// Replace with your actual API Token
-const API_TOKEN = "695d2bbb14d236be330356f4";
-// Replace with the actual endpoint (check your specific provider's docs, likely something like this)
-const API_URL = "https://test.invoice.openapi.com/IT-configurations";
-
-// 2. GENERATE VALID DUMMY DATA
-// Using a generic valid 11-digit P.IVA format (00000000000 is often accepted as test, or use a generator)
-const TEST_VAT_NUMBER = "12485671007";
-
-// Using a standard valid fake Codice Fiscale (Mario Rossi) for the auth representative
-const TEST_TAX_CODE = "RSSMRA80A01H501U";
-
-// 3. CONSTRUCT THE PAYLOAD
-const companyData = {
-	// CORRECTED: Use a valid 11-digit VAT number for testing
-	// '12485671007' is a real valid P.IVA (OpenAPI S.r.l.) often used for sandbox validation
-	fiscal_id: TEST_VAT_NUMBER,
-
-	name: "TEST COMPANY SRL",
-	email: "dev-test@example.com",
-	receipts: true,
-
-	// This part was fine, stick with the personal tax code here for the "Auth Representative"
-	receipts_authentication: {
-		taxCode: TEST_TAX_CODE,
-		password: "TestPassword123!",
-		pin: "12345"
-	},
-
-	api_configurations: [
-		{
-			event: "receipt",
-			callback: { url: "https://ordrino-backend.onrender.com/openapi/receipt" }
-		},
-		{
-			event: "receipt-error",
-			callback: { url: "https://ordrino-backend.onrender.com/openapi/receipt-error" }
-		}
-	]
-};
-
-async function createTestCompany() {
-	try {
-		console.log("Creating Test Company Configuration...");
-
-		const response = await fetch(API_URL, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"Authorization": `Bearer ${API_TOKEN}` // If authentication is required
-			},
-			body: JSON.stringify(companyData)
-		});
-
-		const result = await response.json();
-
-		// 5. HANDLE RESPONSE
-		if (response.ok) {
-			console.log("✅ SUCCESS: Company Created!");
-			console.log("Company ID:", result.data.id);
-			console.log("Fiscal ID:", result.data.fiscal_id);
-		} else {
-			console.error("❌ ERROR:", response.status);
-			console.error("Message:", result.message || result);
-
-			// Handle the specific error mentioned in your prompt (404/409)
-			if (result.error === 111) {
-				console.error("Details: Fiscal ID issue. Try a different VAT number.");
-			}
-		}
-
-	} catch (error) {
-		console.error("❌ NETWORK ERROR:", error.message);
-	}
-}
-
-
-function waitForReceipt(receiptId) {
-	return new Promise((resolve, reject) => {
-		receiptWaiters.set(receiptId, { resolve, reject });
-
-		// Timeout after 15 seconds
-		setTimeout(() => {
-			if (receiptWaiters.has(receiptId)) {
-				receiptWaiters.get(receiptId).reject(new Error("Timeout waiting for OpenAPI receipt"));
-				receiptWaiters.delete(receiptId);
-			}
-		}, 15000);
-	});
-}
-
-async function sendFiscalReceipt({
-	items,
-	paymentBreakdown, // { cash: 0, card: 0, ticketRestaurant: 0, ticketQuantity: 0 }
-	invoiceIssuing = false,
-	linkedReceipt = null,
-	discount = 0,
-	lotteryCode = null,
-	tags = []
-}) {
-	let fiscalId = process.env.OPENAPI_FISCAL_ID;
-
-	// 1. Dynamic Fetch: Get the first available configuration
-	try {
-		console.log("🔍 Fetching available Fiscal Configurations...");
-		const configResponse = await axios.get(
-			"https://test.invoice.openapi.com/IT-configurations",
-			{
-				headers: {
-					Authorization: `Bearer ${process.env.OPENAPI_TOKEN_INVOICE_SANDBOX}`,
-					"Content-Type": "application/json"
-				}
-			}
-		);
-
-		if (configResponse.data && Array.isArray(configResponse.data.data) && configResponse.data.data.length > 0) {
-			// Take the first one found
-			fiscalId = configResponse.data.data[0].fiscal_id;
-			console.log(`✅ Found Fiscal ID: ${fiscalId}`);
-		} else {
-			console.error("⚠️ No configurations found. Falling back to ENV or failing.");
-			createTestCompany();
-			fiscalId = TEST_TAX_CODE;
-		}
-	} catch (error) {
-		console.error("⚠️ Failed to fetch configurations dynamically:", error.message);
-		// We continue, hoping the ENV variable is set as fallback
-		createTestCompany();
-		fiscalId = TEST_TAX_CODE;
-	}
-
-	if (!fiscalId) {
-		throw new Error("No Fiscal ID found (checked API and ENV). Please configure a cashier in OpenAPI.");
-	}
-
-	// 2. Construct Payload
-	const payload = {
-		fiscal_id: fiscalId,
-		items: items.map(i => ({
-			quantity: i.quantity,
-			description: i.name || i.description || "Item",
-			unit_price: i.unit_price / 100, // must be in euros
-			vat_rate_code: i.vat_rate_code || "10",
-			discount: i.discount || 0,
-			complimentary: false,
-			sku: i.sku || ""
-		})),
-		invoice_issuing: invoiceIssuing,
-		cash_payment_amount: paymentBreakdown.cash || 0,
-		electronic_payment_amount: paymentBreakdown.card || 0,
-		ticket_restaurant_payment_amount: paymentBreakdown.ticketRestaurant || 0,
-		ticket_restaurant_quantity: paymentBreakdown.ticketQuantity || 0,
-		goods_uncollected_amount: paymentBreakdown.goodsUncollected || 0,
-		services_uncollected_amount: paymentBreakdown.servicesUncollected || 0,
-		discount: discount,
-		linked_receipt: linkedReceipt,
-		lottery_code: lotteryCode,
-		tags: tags
-	};
-
-	// 3. Send Receipt
-	try {
-		console.log(`📤 Sending to OpenAPI (Fiscal ID: ${fiscalId})...`);
-
-		const response = await axios.post(
-			"https://test.invoice.openapi.com/IT-receipts",
-			payload,
-			{
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${process.env.OPENAPI_TOKEN_INVOICE_SANDBOX}`
-				}
-			}
-		);
-
-		return response.data.data.id;
-
-	} catch (error) {
-		// Detailed Error Logging
-		if (error.response) {
-			console.error("❌ OpenAPI Error Response:", JSON.stringify(error.response.data, null, 2));
-			throw new Error(`OpenAPI Error: ${error.response.data.message || error.response.statusText}`);
-		}
-		throw error;
-	}
-}
-
-
-
-// --- Openapi Receipt Callback (SUCCESS) ---
-app.post('/openapi/receipt', (req, res) => {
-	console.log("📥 Fiscal receipt SUCCESS:", req.body);
-
-	const receiptId = req.body.id;
-
-	if (receiptWaiters.has(receiptId)) {
-		receiptWaiters.get(receiptId).resolve(req.body);
-		receiptWaiters.delete(receiptId);
-	}
-
-	res.sendStatus(200);
-});
-
-// --- Openapi Receipt Callback (ERROR) ---
-app.post('/openapi/receipt-error', (req, res) => {
-	console.error("❌ Fiscal receipt ERROR:", req.body);
-
-	const receiptId = req.body.id;
-
-	if (receiptWaiters.has(receiptId)) {
-		receiptWaiters.get(receiptId).reject(new Error(req.body.message || "Fiscal error"));
-		receiptWaiters.delete(receiptId);
-	}
-
-	res.sendStatus(200);
-});
-
 
 // --- Endpoint for ConnectionToken ---
 app.post('/connection_token', async (req, res) => {
@@ -305,7 +83,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 		issue_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm'),
 		payment_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm'),
 		service_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm'),
-	 } = req.body;
+	} = req.body;
 	console.log(`Received request to capture PaymentIntent: ${payment_intent_id}`);
 
 	// Helper function to format dates
@@ -525,57 +303,13 @@ app.post('/capture_payment_intent', async (req, res) => {
 				}
 			});
 
-			// 1. send to OpenAPI → get receiptId
-			const receiptId = await sendFiscalReceipt({
-				items,
-				paymentBreakdown:
-				{
-					cash: 0,
-					card: parseFloat(captured_total / 100),
-					ticketRestaurant: 0,
-					ticketQuantity: 0
-				}
-			});
-
-			console.log("OpenAPI accepted receipt, id:", receiptId);
-
-			// 2. Wait for callback to arrive
-			let finalReceipt;
-			try {
-				finalReceipt = await waitForReceipt(receiptId);
-			} catch (err) {
-				console.error('Invoice creation error:', {
-					message: error.message,
-					stack: error.stack
-				});
-				return res.status(500).json({
-					success: false,
-					message: "Fiscal system timeout",
-					error: err.message
-				});
-			}
-
-			// 3. finalReceipt contains:
-			// { id, status, protocol, qr, fiscal_code, amount, timestamp }
-
-			// THIS response is NOT the AdE final result.
-			// The final result arrives via callback!
-			console.log("Openapi accepted receipt:", fiscalResponse.data);
 			res.json({
 				status: paymentIntent.status,
 				success: true,
 				invoice_id: invoice.id,
-				hosted_invoice_url: finalReceipt.qr,
+				hosted_invoice_url: invoice.hosted_invoice_url,
 				invoice_pdf: invoice.invoice_pdf,
-				fiscal_receipt: {
-					id: finalReceipt.id,
-					qr: finalReceipt.qr,
-					protocol: finalReceipt.protocol,
-					status: finalReceipt.status,
-					amount: finalReceipt.amount
-				}
 			});
-
 
 		} catch (error) {
 			console.error('Invoice processing failed:', error);
@@ -822,52 +556,11 @@ app.post('/cash_payment', async (req, res) => {
 				});
 			}
 
-			// 1. send to OpenAPI → get receiptId
-			const receiptId = await sendFiscalReceipt({
-				items,
-				paymentBreakdown:
-				{
-					cash: parseFloat((subtotal_amount_cents + tip_amount_cents) / 100),
-					card: 0,
-					ticketRestaurant: 0,
-					ticketQuantity: 0
-				}
-			});
-
-			console.log("OpenAPI accepted receipt, id:", receiptId);
-
-			// 2. Wait for callback to arrive
-			let finalReceipt;
-			try {
-				finalReceipt = await waitForReceipt(receiptId);
-			} catch (err) {
-				console.error('Invoice creation error:', {
-					message: error.message,
-					stack: error.stack
-				});
-				return res.status(500).json({
-					success: false,
-					message: "Fiscal system timeout",
-					error: err.message
-				});
-			}
-
-			// 3. finalReceipt contains:
-			// { id, status, protocol, qr, fiscal_code, amount, timestamp }
-
-
 			res.json({
 				success: true,
 				invoice_id: invoice.id,
-				hosted_invoice_url: finalReceipt.qr,
-				invoice_pdf: invoice.invoice_pdf,
-				fiscal_receipt: {
-					id: finalReceipt.id,
-					qr: finalReceipt.qr,
-					protocol: finalReceipt.protocol,
-					status: finalReceipt.status,
-					amount: finalReceipt.amount
-				}
+				hosted_invoice_url: invoice.hosted_invoice_url,
+				invoice_pdf: invoice.invoice_pdf
 			});
 
 		} catch (error) {
