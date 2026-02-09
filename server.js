@@ -558,6 +558,8 @@ app.post('/cash_payment', async (req, res) => {
 		res.json({
 			success: true,
 			invoice_id: invoice.id,
+			hosted_invoice_url: fiscalResult.pdf_url,
+			invoice_pdf: invoice.invoice_pdf,
 			fiscal_receipt: fiscalResult // Contains the Document Number & PDF URL
 		});
 
