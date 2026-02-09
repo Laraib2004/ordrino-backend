@@ -1,11 +1,11 @@
-require('dotenv').config();
-
 const express = require('express');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { decrypt } = require('./crypto');
+const admin = require('firebase-admin');
 const cors = require('cors');
 const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
+const db = admin.firestore();
 
 app.use(cors());
 app.use(express.json());
@@ -185,12 +185,12 @@ function formatDate(date, format) {
 		.replace('mm', pad(date.getMinutes()));
 }
 
-async function getOrCreateCustomer(email, details) {
+async function getOrCreateCustomer(email, details, tenantStripe) {
 	try {
-		const customers = await stripe.customers.list({ email: email, limit: 1 });
+		const customers = await tenantStripe.customers.list({ email: email, limit: 1 });
 		if (customers.data.length > 0) return customers.data[0];
 
-		return await stripe.customers.create({
+		return await tenantStripe.customers.create({
 			email: email,
 			name: details.name,
 			address: {
@@ -224,14 +224,36 @@ app.post('/connection_token', async (req, res) => {
 });
 
 app.post('/create_payment_intent', async (req, res) => {
-	const { amount, currency = 'eur' } = req.body;
+	const { amount, currency = 'eur', restaurant_id } = req.body;
 	if (!amount) return res.status(400).json({ error: 'Amount required' });
+
+	if (!restaurant_id.length) return res.status(400).json({ error: "No restaurant id" });
+
+	// Fetch the restaurant configuration from Firebase
+	const restaurantDoc = await db.collection('restaurants').doc(restaurant_id).get();
+
+	if (!restaurantDoc.exists) {
+		return res.status(404).json({ error: "Restaurant not found in database" });
+	}
+
+	const config = restaurantDoc.data();
+
+	if (!config.stripe_secret_key) {
+		return res.status(500).json({ error: "Stripe key not configured for this restaurant" });
+	}
+
+	// DECRYPT the key on the fly
+	const decryptedStripeKey = decrypt(config.stripe_secret_key);
+
+	// Initialize a LOCAL Stripe instance for this specific request
+	// This ensures we use THIS restaurant's account, not the platform's.
+	const tenantStripe = require('stripe')(decryptedStripeKey);
 
 	try {
 		// Generic customer for anonymous terminal payments
-		const customer = await getOrCreateCustomer('anonymous_card@yourdomain.com', { name: "Retail Customer" });
+		const customer = await getOrCreateCustomer('anonymous_card@yourdomain.com', { name: "Retail Customer" }, tenantStripe);
 
-		const paymentIntent = await stripe.paymentIntents.create({
+		const paymentIntent = await tenantStripe.paymentIntents.create({
 			amount: amount,
 			currency: currency,
 			customer: customer.id,
@@ -251,15 +273,37 @@ app.post('/capture_payment_intent', async (req, res) => {
 		tip_amount_cents = 0, subtotal_amount_cents = 0,
 		business_vat, // NEEDED FOR ACUBE
 		recipient_code, business_name, business_address, business_city, province, business_country,
-		customer_name, customer_address, customer_city, customer_postal_code, customer_country, customer_vat, customer_fiscal_code,
+		customer_name, customer_address, customer_city, customer_postal_code, customer_country, customer_vat, customer_fiscal_code, restaurant_id,
 		service_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm')
 	} = req.body;
 
 	if (!payment_intent_id || !items.length) return res.status(400).json({ error: 'Missing data' });
 
+	if (!restaurant_id.length) return res.status(400).json({ error: "No restaurant id" });
+
+	// Fetch the restaurant configuration from Firebase
+	const restaurantDoc = await db.collection('restaurants').doc(restaurant_id).get();
+
+	if (!restaurantDoc.exists) {
+		return res.status(404).json({ error: "Restaurant not found in database" });
+	}
+
+	const config = restaurantDoc.data();
+
+	if (!config.stripe_secret_key) {
+		return res.status(500).json({ error: "Stripe key not configured for this restaurant" });
+	}
+
+	// DECRYPT the key on the fly
+	const decryptedStripeKey = decrypt(config.stripe_secret_key);
+
+	// Initialize a LOCAL Stripe instance for this specific request
+	// This ensures we use THIS restaurant's account, not the platform's.
+	const tenantStripe = require('stripe')(decryptedStripeKey);
+
 	try {
 		// 1. Capture Payment
-		const paymentIntent = await stripe.paymentIntents.capture(payment_intent_id);
+		const paymentIntent = await tenantStripe.paymentIntents.capture(payment_intent_id);
 
 		// 2. Validate Amount
 		const expected = subtotal_amount_cents + tip_amount_cents;
@@ -272,7 +316,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 			name: customer_name, address: customer_address, city: customer_city,
 			postal_code: customer_postal_code, country: customer_country,
 			province: province, fiscal_code: customer_fiscal_code, vat: customer_vat
-		});
+		}, tenantStripe);
 
 		// ... [Stripe Invoice Item Logic similar to cash_payment] ...
 		// (Simplified for brevity, assuming you use the same logic as cash_payment to populate the invoice)
@@ -283,7 +327,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 			let serviceTimestamp;
 			for (const item of items) {
 				// Search for matching Stripe product
-				const stripeProducts = await stripe.products.search({
+				const stripeProducts = await tenantStripe.products.search({
 					query: `active:\'true\' AND name:\'${item.name}\'`,
 					limit: 1
 				});
@@ -293,7 +337,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 				}
 
 				// Get the default price for this product
-				const prices = await stripe.prices.list({
+				const prices = await tenantStripe.prices.list({
 					product: stripeProducts.data[0].id,
 					limit: 1
 				});
@@ -319,7 +363,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 					serviceTimestamp = Math.floor(Date.now() / 1000); // Fallback to current time
 				}
 
-				await stripe.invoiceItems.create({
+				await tenantStripe.invoiceItems.create({
 					customer: customer.id,
 					invoice: invoice.id,
 					pricing: {
@@ -342,7 +386,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 				const TIP_PRODUCT_NAME = "Tip"; // NOTE: This MUST match your Stripe Product name
 
 				// 1. Find Tip Product
-				const tipProducts = await stripe.products.search({
+				const tipProducts = await tenantStripe.products.search({
 					query: `active:\'true\' AND name:\'${TIP_PRODUCT_NAME}\'`,
 					limit: 1
 				});
@@ -353,7 +397,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 				// 2. Create Ad-hoc Price for the specific tip amount
 				// Since the tip amount is variable, we create a one-time price for it.
-				const tipPrice = await stripe.prices.create({
+				const tipPrice = await tenantStripe.prices.create({
 					unit_amount: tip_amount_cents, // Use the amount received from the client
 					currency: currency,
 					product: tipProducts.data[0].id,
@@ -362,7 +406,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 				});
 
 				// 3. Add Tip Invoice Item
-				await stripe.invoiceItems.create({
+				await tenantStripe.invoiceItems.create({
 					customer: customer.id,
 					invoice: invoice.id,
 					pricing: {
@@ -409,20 +453,42 @@ app.post('/cash_payment', async (req, res) => {
 		items = [], tip_amount_cents = 0, subtotal_amount_cents = 0, currency = 'eur',
 		business_vat, recipient_code, business_name, business_address, business_city, province, business_country,
 		customer_name, customer_address, customer_city, customer_postal_code, customer_country, customer_vat, customer_fiscal_code,
-		issue_date, payment_date, service_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm')
+		issue_date, payment_date, service_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm'), restaurant_id
 	} = req.body;
 
 	if (!items.length) return res.status(400).json({ error: 'No items' });
+
+	if (!restaurant_id.length) return res.status(400).json({error: "No restaurant id"});
+
+	// Fetch the restaurant configuration from Firebase
+	const restaurantDoc = await db.collection('restaurants').doc(restaurant_id).get();
+
+	if (!restaurantDoc.exists) {
+		return res.status(404).json({ error: "Restaurant not found in database" });
+	}
+
+	const config = restaurantDoc.data();
+
+	if (!config.stripe_secret_key) {
+		return res.status(500).json({ error: "Stripe key not configured for this restaurant" });
+	}
+
+	// DECRYPT the key on the fly
+	const decryptedStripeKey = decrypt(config.stripe_secret_key);
+
+	// Initialize a LOCAL Stripe instance for this specific request
+	// This ensures we use THIS restaurant's account, not the platform's.
+	const tenantStripe = require('stripe')(decryptedStripeKey);
 
 	try {
 		const customer = await getOrCreateCustomer('anonymous@yourdomain.com', {
 			name: customer_name, address: customer_address, city: customer_city,
 			postal_code: customer_postal_code, country: customer_country,
 			province: province, fiscal_code: customer_fiscal_code, vat: customer_vat
-		});
+		}, tenantStripe);
 
 		// 1. Create Stripe Invoice
-		let invoice = await stripe.invoices.create({
+		let invoice = await tenantStripe.invoices.create({
 			customer: customer.id,
 			collection_method: 'send_invoice',
 			days_until_due: 0,
@@ -460,7 +526,7 @@ app.post('/cash_payment', async (req, res) => {
 
 			for (const item of items) {
 				// Search for matching Stripe product
-				const stripeProducts = await stripe.products.search({
+				const stripeProducts = await tenantStripe.products.search({
 					query: `active:\'true\' AND name:\'${item.name}\'`,
 					limit: 1
 				});
@@ -470,7 +536,7 @@ app.post('/cash_payment', async (req, res) => {
 				}
 
 				// Get the default price for this product
-				const prices = await stripe.prices.list({
+				const prices = await tenantStripe.prices.list({
 					product: stripeProducts.data[0].id,
 					limit: 1
 				});
@@ -495,7 +561,7 @@ app.post('/cash_payment', async (req, res) => {
 					serviceTimestamp = Math.floor(Date.now() / 1000); // Fallback to current time
 				}
 
-				await stripe.invoiceItems.create({
+				await tenantStripe.invoiceItems.create({
 					customer: customer.id,
 					invoice: invoice.id,
 					pricing: {
@@ -517,7 +583,7 @@ app.post('/cash_payment', async (req, res) => {
 
 				const TIP_PRODUCT_NAME = "Tip";
 
-				const tipProducts = await stripe.products.search({
+				const tipProducts = await tenantStripe.products.search({
 					query: `active:\'true\' AND name:\'${TIP_PRODUCT_NAME}\'`,
 					limit: 1
 				});
@@ -526,7 +592,7 @@ app.post('/cash_payment', async (req, res) => {
 					throw new Error(`Tip Product "${TIP_PRODUCT_NAME}" not found in Stripe. Please create it.`);
 				}
 
-				const tipPrice = await stripe.prices.create({
+				const tipPrice = await tenantStripe.prices.create({
 					unit_amount: tip_amount_cents,
 					currency: currency,
 					product: tipProducts.data[0].id,
@@ -534,7 +600,7 @@ app.post('/cash_payment', async (req, res) => {
 					tax_behavior: 'unspecified',
 				});
 
-				await stripe.invoiceItems.create({
+				await tenantStripe.invoiceItems.create({
 					customer: customer.id,
 					invoice: invoice.id,
 					pricing: {
@@ -558,9 +624,9 @@ app.post('/cash_payment', async (req, res) => {
 		// For brevity in this solution, I am assuming the Stripe part works as per your code.
 
 		// 3. Finalize & Pay Stripe Invoice (Out of Band)
-		invoice = await stripe.invoices.finalizeInvoice(invoice.id);
+		invoice = await tenantStripe.invoices.finalizeInvoice(invoice.id);
 		if (invoice.status !== 'paid') {
-			invoice = await stripe.invoices.pay(invoice.id, { paid_out_of_band: true });
+			invoice = await tenantStripe.invoices.pay(invoice.id, { paid_out_of_band: true });
 		}
 
 		// 4. FISCALIZATION (The Magic Part)
@@ -598,13 +664,35 @@ app.post('/create-update-product', async (req, res) => {
 			description = "",
 			tax_code,
 			create,
-			prod_id
+			prod_id,
+			restaurant_id
 		} = req.body;
 
+		if (!restaurant_id.length) return res.status(400).json({ error: "No restaurant id" });
+
+		// Fetch the restaurant configuration from Firebase
+		const restaurantDoc = await db.collection('restaurants').doc(restaurant_id).get();
+
+		if (!restaurantDoc.exists) {
+			return res.status(404).json({ error: "Restaurant not found in database" });
+		}
+
+		const config = restaurantDoc.data();
+
+		if (!config.stripe_secret_key) {
+			return res.status(500).json({ error: "Stripe key not configured for this restaurant" });
+		}
+
+		// DECRYPT the key on the fly
+		const decryptedStripeKey = decrypt(config.stripe_secret_key);
+
+		// Initialize a LOCAL Stripe instance for this specific request
+		// This ensures we use THIS restaurant's account, not the platform's.
+		const tenantStripe = require('stripe')(decryptedStripeKey);
 
 		if (!create) {
 
-			const product = await stripe.products.retrieve(prod_id);
+			const product = await tenantStripe.products.retrieve(prod_id);
 
 			if (!product) {
 				throw new Error(`Product "${prod_id}" not found in Stripe`);
@@ -612,12 +700,12 @@ app.post('/create-update-product', async (req, res) => {
 
 			let price;
 
-			const priceOld = await stripe.prices.retrieve(product.default_price);
+			const priceOld = await tenantStripe.prices.retrieve(product.default_price);
 
 			if (priceOld.unit_amount === unit_amount) {
 				price = priceOld;
 			} else {
-				price = await stripe.prices.create({
+				price = await tenantStripe.prices.create({
 					currency,
 					unit_amount: unit_amount,
 					product: product.id,
@@ -626,7 +714,7 @@ app.post('/create-update-product', async (req, res) => {
 				});
 			}
 
-			const productUpdate = await stripe.products.update(
+			const productUpdate = await tenantStripe.products.update(
 				product.id,
 				{
 					default_price: price.id,
@@ -643,7 +731,7 @@ app.post('/create-update-product', async (req, res) => {
 
 		}
 		else {
-			const product = await stripe.products.create({
+			const product = await tenantStripe.products.create({
 				name: itemName,
 				description,
 				tax_code,
@@ -711,12 +799,12 @@ app.get('/public/receipt/:uuid', async (req, res) => {
 	}
 });
 
-async function getOrCreateCustomer(anonymousCustomerEmail) {
+async function getOrCreateCustomer(anonymousCustomerEmail, tenantStripe) {
 	// Create or retrieve customer
 	let customer;
 	try {
-		const customers = await stripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
-		customer = customers.data[0] || await stripe.customers.create({
+		const customers = await tenantStripe.customers.list({ email: anonymousCustomerEmail, limit: 1 });
+		customer = customers.data[0] || await tenantStripe.customers.create({
 			email: anonymousCustomerEmail,
 			name: customer_name,
 			address: {
