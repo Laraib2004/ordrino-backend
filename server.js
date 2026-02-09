@@ -14,7 +14,6 @@ app.use(express.json());
 // 1. HELPER: Fiscalization & Polling Logic
 // ==========================================
 require('dotenv').config();
-const axios = require('axios');
 
 // ==========================================
 // 1. A-CUBE AUTHENTICATION MANAGER
