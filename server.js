@@ -152,13 +152,15 @@ async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transac
 			}
 		}
 
+		const myDomain = process.env.MY_API_DOMAIN || `http://localhost:${process.env.PORT || 3000}`;
+
 		return {
 			success: true,
 			status: fiscalDoc ? 'completed' : 'pending',
 			uuid: uuid,
 			document_number: fiscalDoc?.document_number || null,
-			// Send the actual file content, not a link
-			pdf_base64: pdfBase64
+			// THIS IS THE URL FOR THE QR CODE:
+			public_url: `${myDomain}/public/receipt/${uuid}`
 		};
 
 	} catch (error) {
@@ -573,7 +575,7 @@ app.post('/cash_payment', async (req, res) => {
 		res.json({
 			success: true,
 			invoice_id: invoice.id,
-			hosted_invoice_url: fiscalResult.pdf_url,
+			hosted_invoice_url: fiscalResult.public_url,
 			invoice_pdf: fiscal.pdfBase64,
 			fiscal_receipt: fiscalResult // Contains the Document Number & PDF URL
 		});
@@ -672,6 +674,41 @@ app.post('/create-update-product', async (req, res) => {
 		});
 	}
 
+});
+
+app.get('/public/receipt/:uuid', async (req, res) => {
+	const { uuid } = req.params;
+
+	if (!uuid) return res.status(400).send("Missing Receipt UUID");
+
+	try {
+		console.log(`Proxying receipt request for: ${uuid}`);
+
+		// 1. Get a fresh token (using your existing helper)
+		const authToken = await getAcubeToken();
+		const acubeUrl = process.env.ACUBE_API_URL || 'https://api-sandbox.acubeapi.com';
+
+		// 2. Request the PDF from A-Cube
+		// Note: We use 'responseType: stream' to pipe it directly to the user
+		const response = await axios.get(`${acubeUrl}/receipts/${uuid}/details`, {
+			headers: {
+				'Authorization': `Bearer ${authToken}`,
+				'Accept': 'application/pdf' // Request PDF format
+			},
+			responseType: 'stream'
+		});
+
+		// 3. Set headers so the customer's phone knows it's a PDF
+		res.setHeader('Content-Type', 'application/pdf');
+		res.setHeader('Content-Disposition', `inline; filename="receipt_${uuid}.pdf"`);
+
+		// 4. Pipe the A-Cube response directly to the Customer
+		response.data.pipe(res);
+
+	} catch (error) {
+		console.error("Proxy Error:", error.message);
+		res.status(500).send("Could not retrieve receipt. It may not be ready yet.");
+	}
 });
 
 async function getOrCreateCustomer(anonymousCustomerEmail) {
