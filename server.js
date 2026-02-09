@@ -576,7 +576,7 @@ app.post('/cash_payment', async (req, res) => {
 			success: true,
 			invoice_id: invoice.id,
 			hosted_invoice_url: fiscalResult.public_url,
-			invoice_pdf: fiscal.pdfBase64,
+			invoice_pdf: invoice.invoice_pdf,
 			fiscal_receipt: fiscalResult // Contains the Document Number & PDF URL
 		});
 
