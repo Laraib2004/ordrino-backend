@@ -5,7 +5,6 @@ const cors = require('cors');
 const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
-const db = admin.firestore();
 
 app.use(cors());
 app.use(express.json());
@@ -14,6 +13,19 @@ app.use(express.json());
 // 1. HELPER: Fiscalization & Polling Logic
 // ==========================================
 require('dotenv').config();
+if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+	console.error("FATAL ERROR: FIREBASE_SERVICE_ACCOUNT is missing.");
+	process.exit(1);
+}
+
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
+admin.initializeApp({
+	credential: admin.credential.cert(serviceAccount)
+});
+
+// 3. NOW you can define the DB
+const db = admin.firestore();
 
 // ==========================================
 // 1. A-CUBE AUTHENTICATION MANAGER
