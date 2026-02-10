@@ -197,31 +197,6 @@ function formatDate(date, format) {
 		.replace('mm', pad(date.getMinutes()));
 }
 
-async function getOrCreateCustomer(email, details, tenantStripe) {
-	try {
-		const customers = await tenantStripe.customers.list({ email: email, limit: 1 });
-		if (customers.data.length > 0) return customers.data[0];
-
-		return await tenantStripe.customers.create({
-			email: email,
-			name: details.name,
-			address: {
-				line1: details.address,
-				city: details.city,
-				postal_code: details.postal_code,
-				country: details.country,
-				state: details.province
-			},
-			metadata: {
-				fiscal_code: details.fiscal_code,
-				vat_number: details.vat,
-			}
-		});
-	} catch (error) {
-		throw new Error('Failed to create customer: ' + error.message);
-	}
-}
-
 // ==========================================
 // 3. ROUTES
 // ==========================================
@@ -324,7 +299,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 		}
 
 		// 3. Create Stripe Invoice (For your records)
-		const customer = await getOrCreateCustomer('anonymous_card@yourdomain.com', tenantStripe);
+		const customer = await getOrCreateCustomerByEmail('anonymous_card@yourdomain.com', tenantStripe);
 
 		// ... [Stripe Invoice Item Logic similar to cash_payment] ...
 		// (Simplified for brevity, assuming you use the same logic as cash_payment to populate the invoice)
