@@ -263,7 +263,7 @@ app.post('/create_payment_intent', async (req, res) => {
 
 	try {
 		// Generic customer for anonymous terminal payments
-		const customer = await getOrCreateCustomer('anonymous_card@yourdomain.com', { name: "Retail Customer" }, tenantStripe);
+		const customer = await getOrCreateCustomerByEmail('anonymous_card@yourdomain.com', tenantStripe);
 
 		const paymentIntent = await tenantStripe.paymentIntents.create({
 			amount: amount,
@@ -324,11 +324,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 		}
 
 		// 3. Create Stripe Invoice (For your records)
-		const customer = await getOrCreateCustomer('anonymous_card@yourdomain.com', {
-			name: customer_name, address: customer_address, city: customer_city,
-			postal_code: customer_postal_code, country: customer_country,
-			province: province, fiscal_code: customer_fiscal_code, vat: customer_vat
-		}, tenantStripe);
+		const customer = await getOrCreateCustomer('anonymous_card@yourdomain.com', tenantStripe);
 
 		// ... [Stripe Invoice Item Logic similar to cash_payment] ...
 		// (Simplified for brevity, assuming you use the same logic as cash_payment to populate the invoice)
@@ -486,20 +482,16 @@ app.post('/cash_payment', async (req, res) => {
 	}
 
 	// DECRYPT the key on the fly
-	console.log("trying decripting: " + config.stripe_secret_key);
+	console.log("trying decripting: ");
 	const decryptedStripeKey = decrypt(config.stripe_secret_key);
-	console.log("decripting finished: " + decryptedStripeKey);
+	console.log("decripting finished: ");
 
 	// Initialize a LOCAL Stripe instance for this specific request
 	// This ensures we use THIS restaurant's account, not the platform's.
 	const tenantStripe = require('stripe')(decryptedStripeKey);
 
 	try {
-		const customer = await getOrCreateCustomer('anonymous@yourdomain.com', {
-			name: customer_name, address: customer_address, city: customer_city,
-			postal_code: customer_postal_code, country: customer_country,
-			province: province, fiscal_code: customer_fiscal_code, vat: customer_vat
-		}, tenantStripe);
+		const customer = await getOrCreateCustomerByEmail('anonymous@yourdomain.com', tenantStripe);
 
 		// 1. Create Stripe Invoice
 		let invoice = await tenantStripe.invoices.create({
@@ -813,7 +805,7 @@ app.get('/public/receipt/:uuid', async (req, res) => {
 	}
 });
 
-async function getOrCreateCustomer(anonymousCustomerEmail, tenantStripe) {
+async function getOrCreateCustomerByEmail(anonymousCustomerEmail, tenantStripe) {
 	// Create or retrieve customer
 	let customer;
 	try {
