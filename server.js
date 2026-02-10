@@ -33,7 +33,7 @@ const db = admin.firestore();
 let acubeTokenCache = null;
 let tokenExpirationTime = 0;
 
-async function getAcubeToken() {
+async function getAcubeToken(email, password) {
 	const now = Date.now();
 
 	// Buffer: Refresh if token expires in less than 5 minutes (300000 ms)
@@ -51,8 +51,8 @@ async function getAcubeToken() {
 			: 'https://common.api.acubeapi.com/login';
 
 		const response = await axios.post(loginUrl, {
-			email: process.env.ACUBE_EMAIL,
-			password: process.env.ACUBE_PASSWORD
+			email: email,
+			password: decrypt(password)
 		}, {
 			headers: { 'Content-Type': 'application/json' }
 		});
@@ -75,12 +75,12 @@ async function getAcubeToken() {
 // ==========================================
 // 2. FISCALIZATION LOGIC (Updated)
 // ==========================================
-async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transaction_ref }, backendUrl) {
+async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transaction_ref }, backendUrl, email, password) {
 	console.log(`Starting Fiscalization for ${type} transaction: ${transaction_ref}`);
 
 	try {
 		// A. GET VALID TOKEN
-		const authToken = await getAcubeToken();
+		const authToken = await getAcubeToken(email, password);
 		const acubeUrl = process.env.ACUBE_API_URL || 'https://api-sandbox.acubeapi.com';
 
 		// B. Prepare Items
@@ -282,6 +282,14 @@ app.post('/capture_payment_intent', async (req, res) => {
 		return res.status(500).json({ error: "Stripe key not configured for this restaurant" });
 	}
 
+	if (!config.acube_email) {
+		return res.status(500).json({ error: "acube_email not configured for this restaurant" });
+	}
+
+	if (!config.acube_password) {
+		return res.status(500).json({ error: "acube_password not configured for this restaurant" });
+	}
+
 	// DECRYPT the key on the fly
 	const decryptedStripeKey = decrypt(config.stripe_secret_key);
 
@@ -417,7 +425,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 			fiscal_id: business_vat,
 			type: 'electronic',
 			transaction_ref: payment_intent_id
-		}, backendUrl);
+		}, backendUrl, config.acube_email, config.acube_password);
 
 		res.json({
 			success: true,
@@ -455,6 +463,14 @@ app.post('/cash_payment', async (req, res) => {
 
 	if (!config.stripe_secret_key) {
 		return res.status(500).json({ error: "Stripe key not configured for this restaurant" });
+	}
+
+	if (!config.acube_email) {
+		return res.status(500).json({ error: "acube_email not configured for this restaurant" });
+	}
+
+	if (!config.acube_password) {
+		return res.status(500).json({ error: "acube_password not configured for this restaurant" });
 	}
 
 	// DECRYPT the key on the fly
@@ -614,7 +630,7 @@ app.post('/cash_payment', async (req, res) => {
 			fiscal_id: business_vat,
 			type: 'cash',
 			transaction_ref: invoice.id // Use Invoice ID as ref
-		}, backendUrl);
+		}, backendUrl, config.acube_email, config.acube_password);
 
 		res.json({
 			success: true,
