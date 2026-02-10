@@ -164,7 +164,7 @@ async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transac
 			}
 		}
 
-		const myDomain = process.env.MY_API_DOMAIN || `http://localhost:${process.env.PORT || 3000}`;
+		const myDomain = backendUrl || `http://localhost:${process.env.PORT || 3000}`;
 
 		return {
 			success: true,
