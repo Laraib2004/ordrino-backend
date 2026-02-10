@@ -75,7 +75,7 @@ async function getAcubeToken() {
 // ==========================================
 // 2. FISCALIZATION LOGIC (Updated)
 // ==========================================
-async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transaction_ref }) {
+async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transaction_ref }, backendUrl) {
 	console.log(`Starting Fiscalization for ${type} transaction: ${transaction_ref}`);
 
 	try {
@@ -259,14 +259,15 @@ app.post('/capture_payment_intent', async (req, res) => {
 		payment_intent_id, items = [], currency = 'eur',
 		tip_amount_cents = 0, subtotal_amount_cents = 0,
 		business_vat, // NEEDED FOR ACUBE
-		recipient_code, business_name, business_address, business_city, province, business_country,
-		customer_name, customer_address, customer_city, customer_postal_code, customer_country, customer_vat, customer_fiscal_code, restaurant_id,
+		restaurant_id, backendUrl,
 		service_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm')
 	} = req.body;
 
 	if (!payment_intent_id || !items.length) return res.status(400).json({ error: 'Missing data' });
 
 	if (!restaurant_id.length) return res.status(400).json({ error: "No restaurant id" });
+
+	if (!backendUrl.length) return res.status(400).json({ error: "No backendUrl" });
 
 	// Fetch the restaurant configuration from Firebase
 	const restaurantDoc = await db.collection('restaurants').doc(restaurant_id).get();
@@ -416,7 +417,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 			fiscal_id: business_vat,
 			type: 'electronic',
 			transaction_ref: payment_intent_id
-		});
+		}, backendUrl);
 
 		res.json({
 			success: true,
@@ -433,15 +434,15 @@ app.post('/capture_payment_intent', async (req, res) => {
 // --- CASH PAYMENT (Cash Payment) ---
 app.post('/cash_payment', async (req, res) => {
 	const {
-		items = [], tip_amount_cents = 0, subtotal_amount_cents = 0, currency = 'eur',
-		business_vat, recipient_code, business_name, business_address, business_city, province, business_country,
-		customer_name, customer_address, customer_city, customer_postal_code, customer_country, customer_vat, customer_fiscal_code,
-		issue_date, payment_date, service_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm'), restaurant_id
+		items = [], tip_amount_cents = 0, currency = 'eur',
+		business_vat, service_date = formatDate(new Date(), 'DD-MM-YYYY HH:mm'), restaurant_id,
+		backendUrl
 	} = req.body;
 
 	if (!items.length) return res.status(400).json({ error: 'No items' });
 
 	if (!restaurant_id.length) return res.status(400).json({error: "No restaurant id"});
+	if (!backendUrl.length) return res.status(400).json({ error: "No backend url provided" });
 
 	// Fetch the restaurant configuration from Firebase
 	const restaurantDoc = await db.collection('restaurants').doc(restaurant_id).get();
@@ -480,10 +481,6 @@ app.post('/cash_payment', async (req, res) => {
 		});
 
 		// 2. Add Invoice Items
-		// ... (Keep your existing Product Search & Invoice Item creation logic here) ...
-		let serviceTimestamp;
-
-		// Re-calculate serviceTimestamp once before the loop
 		// Create invoice items with proper period handling
 		try {
 			let serviceTimestamp;
@@ -617,7 +614,7 @@ app.post('/cash_payment', async (req, res) => {
 			fiscal_id: business_vat,
 			type: 'cash',
 			transaction_ref: invoice.id // Use Invoice ID as ref
-		});
+		}, backendUrl);
 
 		res.json({
 			success: true,
