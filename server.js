@@ -211,6 +211,9 @@ app.post('/connection_token', async (req, res) => {
 			return res.status(404).json({ error: "Restaurant not found in database" });
 		}
 
+		// Fetch the restaurant configuration from Firebase
+		const restaurantDoc = await db.collection('restaurants').doc(restaurant_id).get();
+
 		const config = restaurantDoc.data();
 
 		if (!config.stripe_secret_key) {
