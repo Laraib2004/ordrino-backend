@@ -341,6 +341,16 @@ app.post('/capture_payment_intent', async (req, res) => {
 		// (Simplified for brevity, assuming you use the same logic as cash_payment to populate the invoice)
 		// Ideally, extract the "Create Stripe Invoice" logic into a function to reuse here.
 		// Create invoice items with proper period handling
+		// 1. Create Stripe Invoice
+		let invoice = await tenantStripe.invoices.create({
+			customer: customer.id,
+			collection_method: 'send_invoice',
+			days_until_due: 0,
+			auto_advance: false,
+			automatic_tax: { enabled: true },
+			description: 'POS payment',
+			metadata: { payment_type: 'terminal', tip_amount_cents }
+		});
 		try {
 			// Parse service date safely
 			let serviceTimestamp;
