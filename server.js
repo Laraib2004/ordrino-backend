@@ -203,7 +203,28 @@ function formatDate(date, format) {
 
 app.post('/connection_token', async (req, res) => {
 	try {
-		const token = await stripe.terminal.connectionTokens.create();
+		const { restaurant_id } = req.body;
+
+		if (!restaurant_id.length) return res.status(400).json({ error: "No restaurant id" });
+
+		if (!restaurantDoc.exists) {
+			return res.status(404).json({ error: "Restaurant not found in database" });
+		}
+
+		const config = restaurantDoc.data();
+
+		if (!config.stripe_secret_key) {
+			return res.status(500).json({ error: "Stripe key not configured for this restaurant" });
+		}
+
+		// DECRYPT the key on the fly
+		const decryptedStripeKey = decrypt(config.stripe_secret_key);
+
+		// Initialize a LOCAL Stripe instance for this specific request
+		// This ensures we use THIS restaurant's account, not the platform's.
+		const tenantStripe = require('stripe')(decryptedStripeKey);
+
+		const token = await tenantStripe.terminal.connectionTokens.create();
 		res.json({ secret: token.secret });
 	} catch (error) {
 		res.status(500).json({ error: error.message });
