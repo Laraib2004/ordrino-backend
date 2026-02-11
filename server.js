@@ -203,6 +203,7 @@ function formatDate(date, format) {
 
 app.post('/connection_token', async (req, res) => {
 	try {
+		console.log("starting connecion token");
 		const { restaurant_id } = req.body;
 
 		if (!restaurant_id.length) return res.status(400).json({ error: "No restaurant id" });
@@ -212,8 +213,9 @@ app.post('/connection_token', async (req, res) => {
 		}
 
 		// Fetch the restaurant configuration from Firebase
+		console.log("getting restaurant info");
 		const restaurantDoc = await db.collection('restaurants').doc(restaurant_id).get();
-
+		console.log("getting restaurant config");
 		const config = restaurantDoc.data();
 
 		if (!config.stripe_secret_key) {
@@ -221,6 +223,7 @@ app.post('/connection_token', async (req, res) => {
 		}
 
 		// DECRYPT the key on the fly
+		console.log("getting stripe key");
 		const decryptedStripeKey = decrypt(config.stripe_secret_key);
 
 		// Initialize a LOCAL Stripe instance for this specific request
