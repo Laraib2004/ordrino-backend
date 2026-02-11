@@ -208,13 +208,13 @@ app.post('/connection_token', async (req, res) => {
 
 		if (!restaurant_id.length) return res.status(400).json({ error: "No restaurant id" });
 
-		if (!restaurantDoc.exists) {
-			return res.status(404).json({ error: "Restaurant not found in database" });
-		}
 
 		// Fetch the restaurant configuration from Firebase
 		console.log("getting restaurant info");
 		const restaurantDoc = await db.collection('restaurants').doc(restaurant_id).get();
+		if (!restaurantDoc.exists) {
+			return res.status(404).json({ error: "Restaurant not found in database" });
+		}
 		console.log("getting restaurant config");
 		const config = restaurantDoc.data();
 
