@@ -797,6 +797,69 @@ app.post('/create-update-product', async (req, res) => {
 
 });
 
+// ==========================================
+// 4. VOID RECEIPT ROUTE
+// ==========================================
+app.post('/void_receipt', async (req, res) => {
+	const { receipt_uuid, restaurant_id } = req.body;
+
+	if (!receipt_uuid) return res.status(400).json({ error: "Missing receipt_uuid" });
+	if (!restaurant_id) return res.status(400).json({ error: "Missing restaurant_id" });
+
+	try {
+		// 1. Fetch Restaurant Config (for A-Cube credentials)
+		const restaurantDoc = await db.collection('restaurants').doc(restaurant_id).get();
+		if (!restaurantDoc.exists) {
+			return res.status(404).json({ error: "Restaurant not found" });
+		}
+		const config = restaurantDoc.data();
+
+		if (!config.acube_email || !config.acube_password) {
+			return res.status(500).json({ error: "A-Cube credentials missing for this restaurant" });
+		}
+
+		// 2. Get A-Cube Token
+		const authToken = await getAcubeToken(config.acube_email, config.acube_password);
+		const acubeUrl = process.env.ACUBE_API_URL || 'https://api-sandbox.acubeapi.com';
+
+		// 3. Send VOID Request (DELETE method)
+		console.log(`Voiding receipt: ${receipt_uuid}`);
+
+		const voidRes = await axios.delete(`${acubeUrl}/receipts/${receipt_uuid}`, {
+			headers: {
+				'Authorization': `Bearer ${authToken}`,
+				'Accept': 'application/json'
+			}
+		});
+
+		// 4. Handle Success
+		// The API returns the NEW void document. We return its UUID and status.
+		const newVoidDocument = voidRes.data;
+
+		console.log(`Receipt voided successfully. New Void UUID: ${newVoidDocument.uuid}`);
+
+		res.json({
+			success: true,
+			original_uuid: receipt_uuid,
+			void_uuid: newVoidDocument.uuid,
+			status: newVoidDocument.status,
+			message: "Receipt voided successfully"
+		});
+
+	} catch (error) {
+		console.error("Void Failed:", error.response?.data || error.message);
+
+		// Handle specific A-Cube errors (e.g., if receipt is too old to void)
+		const errorMessage = error.response?.data?.detail || error.message;
+
+		res.status(500).json({
+			success: false,
+			error: "Failed to void receipt",
+			details: errorMessage
+		});
+	}
+});
+
 app.get('/public/receipt/:uuid', async (req, res) => {
 	const { uuid } = req.params;
 
