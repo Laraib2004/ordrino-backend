@@ -392,6 +392,23 @@ app.post('/capture_payment_intent', async (req, res) => {
 					serviceTimestamp = Math.floor(Date.now() / 1000); // Fallback to current time
 				}
 
+				const calculation = await tenantStripe.tax.calculations.create({
+					currency: currency,
+					customer: customer,
+					line_items: [
+						{
+							amount: item.unit_price,
+							tax_code: stripeProducts.data[0].tax_code,
+							reference: item.name,
+							tax_behavior: "inclusive",
+							quantity: item.quantity
+						},
+					],
+					expand: ['line_items'],
+				});
+
+				item.vat_rate_code = calculation.tax_breakdown.tax_rate_details.percentage_decimal;
+
 				await tenantStripe.invoiceItems.create({
 					customer: customer.id,
 					invoice: invoice.id,
@@ -593,6 +610,24 @@ app.post('/cash_payment', async (req, res) => {
 					console.error(`Invalid service date format: ${item.service_date || service_date}`);
 					serviceTimestamp = Math.floor(Date.now() / 1000); // Fallback to current time
 				}
+
+				const calculation = await tenantStripe.tax.calculations.create({
+					currency: currency,
+					customer: customer,
+					line_items: [
+						{
+							amount: item.unit_price,
+							tax_code: stripeProducts.data[0].tax_code,
+							reference: item.name,
+							tax_behavior: "inclusive",
+							quantity: item.quantity
+						},
+					],
+					expand: ['line_items'],
+				});
+
+				item.vat_rate_code = calculation.tax_breakdown.tax_rate_details.percentage_decimal;
+
 
 				await tenantStripe.invoiceItems.create({
 					customer: customer.id,
