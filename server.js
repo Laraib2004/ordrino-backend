@@ -88,7 +88,7 @@ async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transac
 			description: item.name || item.description || "Articolo",
 			quantity: item.quantity,
 			unit_price: (item.unit_price_cents || item.unit_price || 0) / 100,
-			vat_rate_code: item.vat_rate_code ? String(item.vat_rate_code) : "22"
+			vat_rate_code: item.vat_rate_code ? String(parseFloat(item.vat_rate_code)) : "22"
 		}));
 
 		if (tip_cents > 0) {
