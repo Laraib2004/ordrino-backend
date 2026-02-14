@@ -394,7 +394,7 @@ app.post('/capture_payment_intent', async (req, res) => {
 
 				const calculation = await tenantStripe.tax.calculations.create({
 					currency: currency,
-					customer: customer,
+					customer: customer.id,
 					line_items: [
 						{
 							amount: item.unit_price,
@@ -613,7 +613,7 @@ app.post('/cash_payment', async (req, res) => {
 
 				const calculation = await tenantStripe.tax.calculations.create({
 					currency: currency,
-					customer: customer,
+					customer: customer.id,
 					line_items: [
 						{
 							amount: item.unit_price,
