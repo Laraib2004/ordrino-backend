@@ -626,7 +626,7 @@ app.post('/cash_payment', async (req, res) => {
 					expand: ['line_items'],
 				});
 
-				item.vat_rate_code = calculation.tax_breakdown.tax_rate_details.percentage_decimal;
+				item.vat_rate_code = calculation.tax_breakdown[0].tax_rate_details.percentage_decimal;
 
 
 				await tenantStripe.invoiceItems.create({
