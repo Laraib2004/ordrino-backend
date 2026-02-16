@@ -96,7 +96,7 @@ async function fiscalizeTransaction({ items, tip_cents, fiscal_id, type, transac
 				description: "Mancia / Tip",
 				quantity: 1,
 				unit_price: tip_cents / 100,
-				vat_rate_code: "0"
+				vat_rate_code: "N2"
 			});
 		}
 
